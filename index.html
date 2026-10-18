@@ -10,15 +10,17 @@
 <aside class="sidebar" id="sidebar">
  <a class="brand" href="#dashboard"><span class="brand-mark">⚡</span><span><strong>水電好管家</strong><small>工程業務管理系統</small></span></a>
  <div class="nav-label">工作空間</div>
- <nav id="nav"><button data-page="dashboard" class="active">◫ <span>總覽儀表板</span></button><button data-page="customers">♙ <span>客戶資料</span></button><button data-page="projects">▣ <span>工程案件</span></button><button data-page="quotes">▤ <span>估價單管理</span></button><button data-page="payments">＄ <span>收款紀錄</span></button></nav>
+ <nav id="nav"><button data-page="dashboard" class="active">◫ <span>總覽儀表板</span></button><button data-page="customers">♙ <span>客戶資料</span></button><button data-page="projects">▣ <span>工程案件</span></button><button data-page="quotes">▤ <span>估價單管理</span></button><button data-page="payments">＄ <span>收款紀錄</span></button><button data-page="costs">▤ <span>成本登錄</span></button><button data-page="analytics">▥ <span>毛利分析</span></button><button data-page="exports">↓ <span>Excel 報表</span></button></nav>
  <div class="side-bottom"><div class="demo-label" id="mode-badge">◉ 示範模式</div><p>專為水電承攬與小型工程團隊設計</p><button id="reset-demo" class="link-button">↻ 重設示範資料</button></div>
 </aside>
 <div class="workarea">
 <header class="topbar"><button id="menu-btn" aria-label="開啟導覽選單">☰</button><span class="crumb">營運管理 / <strong id="crumb-name">總覽儀表板</strong></span><div class="top-right"><span class="today" id="today"></span><span class="avatar">工</span></div></header>
 <main id="main"></main>
-<footer>水電好管家 · PoC v0.1　<span id="storage-notice">示範資料僅儲存在目前瀏覽器</span></footer>
+<footer>水電好管家 · PoC v0.2　<span id="storage-notice">示範資料僅儲存在目前瀏覽器</span></footer>
 </div></div>
 <div class="toast" id="toast" role="status"></div>
 <div class="modal-root" id="modal-root"></div>
+<script src="/reports.js" defer></script>
+<script src="/xlsx-lite.js" defer></script>
 <script src="/app.js" defer></script>
 </body></html>

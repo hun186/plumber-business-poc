@@ -75,3 +75,39 @@ test('local HTTP API requires authentication and an allowed origin',async()=>{
  }finally{await new Promise(resolve=>server.close(resolve))}
 });
 test('Vercel disables non-durable SQLite even if env vars exist',()=>{process.env.VERCEL='1';const {enabled}=require('../api/_auth');assert.equal(enabled(),false);delete process.env.VERCEL});
+
+test('Codex P2: public and proxied sessions require Secure cookies',()=>{
+ const {sessionCookie}=require('../api/_auth');
+ const publicReq={headers:{host:'business.example.test'},socket:{remoteAddress:'127.0.0.1'}};
+ assert.match(sessionCookie(publicReq),/; Secure; SameSite=Strict/);
+ const localReq={headers:{host:'127.0.0.1:3000'},socket:{remoteAddress:'127.0.0.1'}};
+ assert.doesNotMatch(sessionCookie(localReq),/; Secure;/);
+ assert.match(sessionCookie({...localReq,headers:{...localReq.headers,'x-forwarded-proto':'https'}}),/; Secure;/);
+ assert.match(sessionCookie({...localReq,socket:{remoteAddress:'198.51.100.2'}}),/; Secure;/);
+});
+test('Codex P2: canceled jobs remain in raw Excel sheets but not profitability analysis',()=>{
+ const data={...sample,quotes:[{number:'CANCEL-1',projectId:'p3',customerId:'c1',date:'2026-09-03',items:[{name:'已撤銷工項',qty:1,price:300,unit:'式'}],taxRate:5}],payments:[...sample.payments,{id:'r3',projectId:'p3',date:'2026-09-04',amount:1000}],costs:[...sample.costs,{id:'x3cancel',projectId:'p3',date:'2026-09-04',category:'人工',amount:300}]};
+ const sheets=reports.sheets(data,{},['projects','quotes','quoteItems','payments','costs','byType','profit','summary']);
+ const byName=Object.fromEntries(sheets.map(x=>[x.name,x]));
+ assert.equal(byName['工程案件'].rows.length,3);
+ assert.equal(byName['估價單'].rows.length,1);
+ assert.equal(byName['估價工項'].rows.length,1);
+ assert.equal(byName['收款紀錄'].rows.length,2);
+ assert.equal(byName['成本明細'].rows.length,4);
+ const canceled=byName['工程案件'].rows.find(x=>x[0]==='p3');
+ assert.equal(canceled[9],1000);assert.equal(canceled[10],300);assert.equal(canceled[11],'');assert.equal(canceled[12],'');
+ assert.equal(byName['個案毛利分析'].rows.length,2);
+ assert.equal(reports.analyze(data).totals.projects,2);
+ assert.equal(reports.sheets(data,{status:'已取消'},['projects','payments','profit'])[0].rows.length,1);
+});
+test('Codex P2: XLSX uses Excel percentage formats for margins and cost shares',()=>{
+ const book=reports.sheets(sample,{type:'維修保養'},['byType','byCost','profit','summary']);
+ const bytes=xlsx.buildWorkbook(book);
+ const xml=Buffer.from(bytes).toString('utf8'); // ZIP uses STORE so OOXML is embedded verbatim
+ assert.match(xml, /<cellXfs count="4">/);
+ assert.match(xml, /<xf numFmtId="10"[^>]*applyNumberFormat="1"\/>/);
+ assert.match(xml, /<c r="F2" s="3"><v>0\.5<\/v><\/c>/);
+ assert.match(xml, /<c r="D2" s="3"><v>0\.6<\/v><\/c>/);
+ assert.match(xml, /<c r="I2" s="3"><v>0\.5<\/v><\/c>/);
+ assert.match(xml, /<c r="B10" s="3"><v>0\.5<\/v><\/c>/);
+});

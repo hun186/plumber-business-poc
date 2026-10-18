@@ -16,10 +16,10 @@
   profit:{name:'個案毛利分析',headers:['案件編號','工程名稱','業務類別','案件狀態','客戶','案件金額','登錄成本','估算毛利','估算毛利率','收款金額']},
   summary:{name:'營運摘要',headers:['指標','數值']}
  };
- function selected(data,filters={}){
+ function selected(data,filters={},includeCanceled=false){
   const from=text(filters.from),to=text(filters.to),type=text(filters.type),status=text(filters.status);
   if(from&&to&&from>to)throw new Error('結束日期不可早於開始日期');
-  const projects=(data.projects||[]).filter(p=>p.status!=='已取消'&&(!type||p.type===type)&&(!status||p.status===status)&&(!from||text(p.startDate)>=from)&&(!to||text(p.startDate)<=to));
+  const projects=(data.projects||[]).filter(p=>(includeCanceled||p.status!=='已取消')&&(!type||p.type===type)&&(!status||p.status===status)&&(!from||text(p.startDate)>=from)&&(!to||text(p.startDate)<=to));
   const ids=new Set(projects.map(x=>x.id));
   const byId=new Map(projects.map(p=>[p.id,p]));
   // Unfiltered customer export is a master-data export: retain clients without active projects.
@@ -46,11 +46,11 @@
  }
  function quoteTotal(q){const subtotal=sum(q.items||[],i=>n(i.qty)*n(i.price));const tax=Math.round(subtotal*n(q.taxRate)/100);return {subtotal,tax,total:subtotal+tax}}
  function sheets(data,filters={},keys=Object.keys(columns)){
-  const a=analyze(data,filters),s=a.selection,projMap=s.byId,customers=s.custById;
-  const costByProject=new Map(),paidByProject=new Map();for(const p of a.profitRows){costByProject.set(p.id,p.cost);paidByProject.set(p.id,p.collected)}
+  const a=analyze(data,filters),s=selected(data,filters,true),projMap=s.byId,customers=s.custById;
+  const costByProject=new Map(),paidByProject=new Map(),profitByProject=new Map(a.profitRows.map(p=>[p.id,p]));for(const c of s.costs)costByProject.set(c.projectId,n(costByProject.get(c.projectId))+n(c.amount));for(const p of s.payments)paidByProject.set(p.projectId,n(paidByProject.get(p.projectId))+n(p.amount));
   const rows={
    customers:s.customers.map(columns.customers.row),
-   projects:s.projects.map(p=>{const pr=a.profitRows.find(x=>x.id===p.id);return [p.id,p.customerId,customers.get(p.customerId)?.name||'',p.title,p.type,p.status,p.startDate,p.dueDate,n(p.amount),paidByProject.get(p.id),costByProject.get(p.id),pr.profit,pr.margin,p.note]}),
+   projects:s.projects.map(p=>{const pr=profitByProject.get(p.id);return [p.id,p.customerId,customers.get(p.customerId)?.name||'',p.title,p.type,p.status,p.startDate,p.dueDate,n(p.amount),n(paidByProject.get(p.id)),n(costByProject.get(p.id)),pr?.profit??'',pr?.margin??'',p.note]}),
    quotes:s.quotes.map(q=>{const x=quoteTotal(q);return [q.number,q.projectId,customers.get(q.customerId)?.name||'',q.date,q.status,x.subtotal,x.tax,x.total,q.note]}),
    quoteItems:s.quotes.flatMap(q=>(q.items||[]).map(i=>[q.number,projMap.get(q.projectId)?.type||'',i.name,n(i.qty),i.unit,n(i.price),n(i.qty)*n(i.price)])),
    payments:s.payments.map(p=>[p.id,p.projectId,projMap.get(p.projectId)?.title||'',p.date,n(p.amount),p.note]),
@@ -58,7 +58,7 @@
    byType:a.byType.map(x=>[x.type,x.count,x.revenue,x.cost,x.profit,x.margin,x.collected]),
    byCost:a.byCost.map(x=>[x.category,x.count,x.amount,x.share]),
    profit:a.profitRows.map(x=>[x.id,x.title,x.type,x.status,x.customer,x.revenue,x.cost,x.profit,x.margin,x.collected]),
-   summary:[['報表範圍_開始日',filters.from||'全部'],['報表範圍_結束日',filters.to||'全部'],['業務類別篩選',filters.type||'全部'],['工程狀態篩選',filters.status||'全部'],['有效案件數',a.totals.projects],['案件金額合計_未稅',a.totals.revenue],['已登錄成本',a.totals.cost],['估算毛利',a.totals.profit],['估算毛利率',a.totals.margin??'無法計算'],['已收款',a.totals.collected],['預估未收款',a.totals.uncollected],['統計說明','不含已取消案件；依案件開始日期篩選；已選案件的成本與收款採全期間明細'],['重要提醒','案件金額可能是預估報價；成本可能尚未登齊，毛利與毛利率僅供管理估算，並非會計認列獲利']]
+   summary:[['報表範圍_開始日',filters.from||'全部'],['報表範圍_結束日',filters.to||'全部'],['業務類別篩選',filters.type||'全部'],['工程狀態篩選',filters.status||'全部'],['有效案件數',a.totals.projects],['案件金額合計_未稅',a.totals.revenue],['已登錄成本',a.totals.cost],['估算毛利',a.totals.profit],['估算毛利率',a.totals.margin??'無法計算'],['已收款',a.totals.collected],['預估未收款',a.totals.uncollected],['統計說明','毛利統計不含已取消案件；業務明細保留符合篩選的已取消案件；依案件開始日期篩選，成本與收款採全期間明細'],['重要提醒','案件金額可能是預估報價；成本可能尚未登齊，毛利與毛利率僅供管理估算，並非會計認列獲利']]
   };
   return [...new Set(keys)].filter(k=>columns[k]).map(k=>({name:columns[k].name,headers:columns[k].headers,rows:rows[k]}));
  }

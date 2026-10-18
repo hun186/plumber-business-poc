@@ -22,7 +22,8 @@
   const projects=(data.projects||[]).filter(p=>p.status!=='已取消'&&(!type||p.type===type)&&(!status||p.status===status)&&(!from||text(p.startDate)>=from)&&(!to||text(p.startDate)<=to));
   const ids=new Set(projects.map(x=>x.id));
   const byId=new Map(projects.map(p=>[p.id,p]));
-  const customers=(data.customers||[]).filter(c=>projects.some(p=>p.customerId===c.id));
+  // Unfiltered customer export is a master-data export: retain clients without active projects.
+  const customers=(!from&&!to&&!type&&!status)?(data.customers||[]):(data.customers||[]).filter(c=>projects.some(p=>p.customerId===c.id));
   const custById=new Map((data.customers||[]).map(c=>[c.id,c]));
   const costs=(data.costs||[]).filter(c=>ids.has(c.projectId));
   const payments=(data.payments||[]).filter(c=>ids.has(c.projectId));

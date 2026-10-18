@@ -48,6 +48,9 @@ test('Gross profit separates contract value, costs and collections',()=>{
  const filtered=reports.analyze(sample,{from:'2026-09-01',to:'2026-09-30',type:'電力工程'});
  assert.equal(filtered.totals.projects,1);assert.equal(filtered.totals.profit,12000);
  assert.throws(()=>reports.analyze(sample,{from:'2026-10-01',to:'2026-09-01'}));
+ const master={...sample,customers:[...sample.customers,{id:'c-unused',name:'無工程的潛在客戶'}]};
+ assert.equal(reports.sheets(master,{},['customers'])[0].rows.length,2);
+ assert.equal(reports.sheets(master,{type:'維修保養'},['customers'])[0].rows.length,1);
 });
 test('Excel export has workbook sheets with sanitized client-provided values',()=>{
  const w=reports.sheets(sample,{type:'維修保養'},['byType','byCost','profit','summary']);

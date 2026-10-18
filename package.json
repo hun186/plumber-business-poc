@@ -1,0 +1,13 @@
+{
+  "name": "plumber-business-poc",
+  "version": "0.1.0",
+  "private": true,
+  "description": "水電好管家：水電工程客戶、案件、估價與收款 PoC",
+  "scripts": {
+    "dev": "vercel dev",
+    "check": "node --check app.js && node --check api/_auth.js && node --check api/data.js && node --check api/login.js && node --check api/status.js",
+    "test": "node --test tests/auth.test.js"
+  },
+  "engines": {"node": ">=20"},
+  "dependencies": {"pg": "^8.13.3"}
+}

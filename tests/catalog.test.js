@@ -97,3 +97,37 @@ test('a thirteenth hierarchy level is rejected when saving',()=>{
  }
  assert.throws(()=>upsertCatalog('add',item('w-depth-13','超過限制',parent),db),/12 層/);
 });
+
+test('template-only BOM and unsynchronized quote-only BOM both lock inventory units',()=>{
+ processInventory('itemAdd',{id:'i-template-only',sku:'ONLY-TEMPLATE',name:'模板專用',unit:'米',unitCost:2,alertQty:0,note:''},db);
+ upsertCatalog('add',item('w-template-only','模板專用工項','w-office',1,120,[{itemId:'i-template-only',qty:1.25}]),db);
+ const target=(id,sku,unit)=>({id,sku,name:'不應改單位',unit,unitCost:2,alertQty:0,note:''});
+ assert.throws(()=>processInventory('itemUpdate',target('i-template-only','ONLY-TEMPLATE','箱'),db),/計量單位/);
+ processInventory('itemAdd',{id:'i-quote-only',sku:'ONLY-QUOTE',name:'估價專用',unit:'米',unitCost:2,alertQty:0,note:''},db);
+ mutate('add',{id:'q-unsynced-only',number:'QT-UNSYNCED-001',projectId:'p-cat',customerId:'c-cat',date:'2026-10-20',status:'草稿',taxRate:5,note:'',items:[{name:'引用庫存',qty:1,unit:'式',price:99,materials:[{itemId:'i-quote-only',qty:2.5}]}]});
+ assert.throws(()=>processInventory('itemUpdate',target('i-quote-only','ONLY-QUOTE','箱'),db),/計量單位/);
+ processInventory('itemAdd',{id:'i-free-unit',sku:'UNUSED',name:'未引用',unit:'米',unitCost:2,alertQty:0,note:''},db);
+ assert.doesNotThrow(()=>processInventory('itemUpdate',target('i-free-unit','UNUSED','箱'),db));
+});
+test('demo quote plan cleanup removes moved quote stale demand without deleting manual plans',()=>{
+ const data={
+  quoteMaterialPlans:[{quoteId:'q-move',projectId:'p-old',itemId:'i-a'},{quoteId:'q-other',projectId:'p-other',itemId:'i-b'}],
+  materialRequirements:[{id:'b-old',source:'quote',sourceQuoteId:'q-move',projectId:'p-old',itemId:'i-a'},
+   {id:'b-manual',projectId:'p-old',itemId:'i-a',plannedQty:7},
+   {id:'b-elsewhere',source:'quote',sourceQuoteId:'q-other',projectId:'p-other',itemId:'i-b'}]
+ };
+ kit.clearQuotePlans(data,'q-move');
+ assert.deepEqual(data.quoteMaterialPlans.map(x=>x.quoteId),['q-other']);
+ assert.deepEqual(data.materialRequirements.map(x=>x.id),['b-manual','b-elsewhere']);
+ kit.clearQuotePlans(data,'q-new','p-other');
+ assert.deepEqual(data.quoteMaterialPlans,[]);
+ assert.deepEqual(data.materialRequirements.map(x=>x.id),['b-manual']);
+});
+test('demo catalog depth guard matches 12-level SQLite limit and quote form uses collection selectors',()=>{
+ const ui=fs.readFileSync(path.join(__dirname,'../catalog-ui.js'),'utf8');
+ const app=fs.readFileSync(path.join(__dirname,'../app.js'),'utf8');
+ assert.match(ui,/\+\+depth>=12/);
+ assert.doesNotMatch(app,/\$\('#items-table tbody tr'\)\.(?:map|some|reduce)/);
+ assert.doesNotMatch(app,/\$\('#nav details'\)\.forEach/);
+ assert.match(app,/CatalogKit\.clearQuotePlans\(state\.data,payload\.id\)/);
+});

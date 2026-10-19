@@ -38,7 +38,10 @@ const InventoryUI=(()=>{
      if(!p.name||!p.sku||!p.unit||n(p.unitCost)<0||n(p.alertQty)<0)throw Error('料件欄位不完整');
      if(list().some(i=>i.id!==p.id&&i.sku===p.sku))throw Error('料號不可重複');
      if(action==='itemAdd')list().push({...p,stock:0});
-     else{const old=item(p.id);if(old.unit!==p.unit&&(moves().some(m=>m.itemId===p.id)||plans().some(r=>r.itemId===p.id)))throw Error('已有出入庫的品項不可修改單位');Object.assign(old,p)}
+     else{const old=item(p.id);if(old.unit!==p.unit&&(moves().some(m=>m.itemId===p.id)||plans().some(r=>r.itemId===p.id)||
+       (d.quoteMaterialPlans||[]).some(r=>r.itemId===p.id)||
+       (d.workTemplates||[]).some(t=>(t.materials||[]).some(m=>m.itemId===p.id))||
+       (d.quotes||[]).some(q=>(q.items||[]).some(line=>(line.materials||[]).some(m=>m.itemId===p.id)))))throw Error('耗材已被庫存或工項／估價材料配方引用，不可修改計量單位');Object.assign(old,p)}
     }else if(action==='requirementAdd'||action==='requirementUpdate'){
      if(!(n(p.plannedQty)>0)||!quantity3(Number(p.plannedQty)))throw Error('預計用量必須大於零，最多小數三位');
      if(action==='requirementAdd'){

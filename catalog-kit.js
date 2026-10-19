@@ -39,5 +39,11 @@
   }
   return [...totals].map(([itemId,plannedQty])=>({itemId,plannedQty}));
  }
- return {flatten,quoteMaterials,round3};
+ function clearQuotePlans(data,quoteId,projectId=null){
+  data.quoteMaterialPlans=(data.quoteMaterialPlans||[]).filter(row=>
+   row.quoteId!==quoteId&&(projectId===null||row.projectId!==projectId));
+  data.materialRequirements=(data.materialRequirements||[]).filter(row=>
+   !(row.source==='quote'&&(row.sourceQuoteId===quoteId||(projectId!==null&&row.projectId===projectId))));
+ }
+ return {flatten,quoteMaterials,clearQuotePlans,round3};
 });

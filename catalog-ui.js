@@ -30,7 +30,7 @@ const CatalogUI=(()=>{
     if(p.parentId){
      let ancestor=all.find(x=>x.id===p.parentId),seen=new Set([p.id]),depth=0;
      if(!ancestor||ancestor.kind!=='package')throw Error('父項必須為包項');
-     while(ancestor){if(seen.has(ancestor.id)||++depth>12)throw Error('工項層級不可循環');seen.add(ancestor.id);ancestor=all.find(x=>x.id===ancestor.parentId)}
+     while(ancestor){if(seen.has(ancestor.id)||++depth>=12)throw Error('工項層級不可循環');seen.add(ancestor.id);ancestor=all.find(x=>x.id===ancestor.parentId)}
     }
     const used=new Set();for(const m of p.materials){if(!items().some(x=>x.id===m.itemId)||used.has(m.itemId)||!(m.qty>0)||!/^(?:0|[1-9]\d*)(?:\.\d{1,3})?$/.test(String(m.qty)))throw Error('材料配方重複或數量不合法');used.add(m.itemId)}
     if(action==='add')all.push(p);else Object.assign(found,p);
@@ -86,9 +86,8 @@ const CatalogUI=(()=>{
     const rows=CatalogKit.quoteMaterials(quote);
     if(!rows.length)throw Error('估價單沒有配置材料配方');
     for(const row of rows)if(!items().some(i=>i.id===row.itemId))throw Error('估價單有不存在的耗材');
-    state.data.quoteMaterialPlans=(state.data.quoteMaterialPlans||[]).filter(x=>x.projectId!==quote.projectId);
+    CatalogKit.clearQuotePlans(state.data,id,quote.projectId);
     state.data.quoteMaterialPlans.push(...rows.map(x=>({...x,projectId:quote.projectId,quoteId:id})));
-    state.data.materialRequirements=(state.data.materialRequirements||[]).filter(x=>!(x.source==='quote'&&x.projectId===quote.projectId));
     const existing=new Set(state.data.materialRequirements.filter(x=>x.projectId===quote.projectId).map(x=>x.itemId));
     for(const row of rows)if(!existing.has(row.itemId))state.data.materialRequirements.push({id:'bq-'+quote.projectId+'-'+row.itemId,projectId:quote.projectId,itemId:row.itemId,plannedQty:row.plannedQty,note:'已接受估價單同步',source:'quote',sourceQuoteId:id});
     saveLocal();

@@ -64,14 +64,24 @@ const CatalogUI=(()=>{
   for(const m of t.materials||[])recipeRow(m);
  }
  function quotePicker(addRow){
-  const button=$('#quote-template-add'),selector=$('#quote-template');if(!button||!selector)return;
+  const button=$('#quote-template-add'),selector=$('#quote-template'),feedback=$('#quote-template-feedback');
+  if(!button||!selector)return;
+  function notify(message,failed=false){
+   if(feedback){feedback.textContent=message;feedback.className='quote-template-feedback '+(failed?'is-error':'is-success')}
+   toast(message);
+  }
   button.onclick=()=>{
-   if(!selector.value)return toast('請選擇包項或工項');
-   try{const lines=CatalogKit.flatten(list(),selector.value),old=$$('#items-table tbody tr');
+   if(!selector.value)return notify('請先選擇包項或工項',true);
+   try{
+    const lines=CatalogKit.flatten(list(),selector.value);
+    if(!lines.length)throw new Error('這個包項沒有可加入的計價工項');
+    const old=$$('#items-table tbody tr');
     if(old.length===1&&!$('[name=itemName]',old[0]).value.trim())old[0].remove();
     for(const line of lines)addRow(line);
-    toast('已加入 '+lines.length+' 個工項，材料配方作為報價快照保存');
-   }catch(e){toast(e.message)}
+    const latest=$$('#items-table tbody tr').at(-1);
+    if(latest&&typeof latest.scrollIntoView==='function')latest.scrollIntoView({block:'nearest',behavior:'smooth'});
+    notify('✓ 已新增 '+lines.length+' 個工項，估價明細已更新（材料配方會隨估價單保存）');
+   }catch(e){notify('無法加入工項：'+(e?.message||'請檢查工項範本及子工項設定'),true)}
   };
  }
  async function syncQuote(id){

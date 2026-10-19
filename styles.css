@@ -30,3 +30,7 @@
 .quote-template-picker select{flex:1;min-width:180px;border:1px solid #d5e0e5;padding:7px;border-radius:7px;background:white}
 #recipe-table select,#recipe-table input{width:100%;min-width:90px}
 @media(max-height:680px){.sidebar .side-bottom p{display:none}.sidebar .side-bottom{padding:8px 14px}.sidebar .brand{padding:15px}.sidebar .nav-label{padding:3px 15px}}
+
+.quote-template-feedback{width:100%;font-size:13px;min-height:19px;line-height:1.5}
+.quote-template-feedback.is-success{color:#137e78;font-weight:700}
+.quote-template-feedback.is-error{color:#bc4338;font-weight:700}

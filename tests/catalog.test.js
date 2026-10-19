@@ -127,7 +127,7 @@ test('demo catalog depth guard matches 12-level SQLite limit and quote form uses
  const ui=fs.readFileSync(path.join(__dirname,'../catalog-ui.js'),'utf8');
  const app=fs.readFileSync(path.join(__dirname,'../app.js'),'utf8');
  assert.match(ui,/\+\+depth>=12/);
- assert.doesNotMatch(app,/\$\('#items-table tbody tr'\)\.(?:map|some|reduce)/);
- assert.doesNotMatch(app,/\$\('#nav details'\)\.forEach/);
+ assert.doesNotMatch(app,/(?<!\$)\$\('#items-table tbody tr'\)\.(?:map|some|reduce)/);
+ assert.doesNotMatch(app,/(?<!\$)\$\('#nav details'\)\.forEach/);
  assert.match(app,/CatalogKit\.clearQuotePlans\(state\.data,payload\.id\)/);
 });

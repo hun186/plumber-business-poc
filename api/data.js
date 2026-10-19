@@ -45,7 +45,7 @@ function validate(cfg,p,conn,action) {
      if(!Array.isArray(i.materials)||i.materials.length>80)invalid('估價材料配方格式錯誤');
      const seen=new Set();
      for(const m of i.materials){
-      if(!m||typeof m.itemId!=='string'||!/^i-[a-zA-Z0-9-]{2,76}$/.test(m.itemId)||seen.has(m.itemId)||!Number.isFinite(Number(m.qty))||Number(m.qty)<=0||!/^(?:0|[1-9]\\d*)(?:\\.\\d{1,3})?$/.test(String(m.qty)))invalid('估價材料用量不合法');
+      if(!m||typeof m.itemId!=='string'||!/^i-[a-zA-Z0-9-]{2,76}$/.test(m.itemId)||seen.has(m.itemId)||!Number.isFinite(Number(m.qty))||Number(m.qty)<=0||!/^(?:0|[1-9]\d*)(?:\.\d{1,3})?$/.test(String(m.qty)))invalid('估價材料用量不合法');
       seen.add(m.itemId);
      }
     }

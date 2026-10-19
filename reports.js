@@ -17,6 +17,8 @@
   inventory:{name:'耗材庫存清冊',headers:['料號','品名','單位','庫存量','警戒量','單位成本','估算庫存價值','告警狀態','備註']},
   materialNeeds:{name:'工程材料需求',headers:['案件編號','工程名稱','料號','耗材','單位','預計需求','已領用','待領用','庫存量','備料狀態','備註']},
   stockMoves:{name:'庫存異動紀錄',headers:['異動編號','日期','料號','耗材','異動類型','數量','記錄單價','歸屬工程','備註']},
+  workTemplates:{name:'工項與包項範本',headers:['範本ID','所屬包項ID','種類','工項名稱','每上層預設數量','計量單位','未稅單價','備註']},
+  workBom:{name:'工項材料配方',headers:['工項範本ID','工項名稱','材料料號','材料名稱','每單位工項耗材數量','耗材單位']},
   summary:{name:'營運摘要',headers:['指標','數值']}
  };
  function selected(data,filters={},includeCanceled=false){
@@ -93,6 +95,8 @@
    inventory:(data.inventoryItems||[]).map(i=>[i.sku,i.name,i.unit,n(i.stock),n(i.alertQty),n(i.unitCost),n(i.stock)*n(i.unitCost),n(i.stock)<=n(i.alertQty)?'低庫存':'正常',i.note]),
    materialNeeds:(data.materialRequirements||[]).filter(r=>selectedProjects.has(r.projectId)).map(r=>{const i=inventoryMap.get(r.itemId)||{},usedQty=used(r.projectId,r.itemId),rest=coverage.remaining.get(r.id)||0,shared=coverage.byItem.get(r.itemId),cancelled=projMap.get(r.projectId)?.status==='已取消';const readiness=cancelled?'案件已取消':shared?.shortfall>0?`整體備料不足（共缺 ${shared.shortfall}）`:'可備料';return [r.projectId,projMap.get(r.projectId)?.title||'',i.sku||'',i.name||'',i.unit||'',n(r.plannedQty),usedQty,rest,n(i.stock),readiness,r.note]}),
    stockMoves:allMovements.filter(m=>noFilters||(m.projectId&&selectedProjects.has(m.projectId))).map(m=>{const i=inventoryMap.get(m.itemId)||{};return [m.id,m.date,i.sku||'',i.name||'',{receive:'進貨入庫',issue:'工程領料',adjust:'盤點調整'}[m.kind]||m.kind,n(m.qty),n(m.unitCost),m.projectId?projMap.get(m.projectId)?.title||'':'',m.note]}),
+   workTemplates:(data.workTemplates||[]).map(t=>[t.id,t.parentId||'',t.kind==='package'?'包項':'工項',t.name,n(t.defaultQty),t.unit,n(t.unitPrice),t.note]),
+   workBom:(data.workTemplates||[]).flatMap(t=>(t.materials||[]).map(m=>{const i=inventoryMap.get(m.itemId)||{};return [t.id,t.name,i.sku||'',i.name||'',n(m.qty),i.unit||'']})),
    summary:[['報表範圍_開始日',filters.from||'全部'],['報表範圍_結束日',filters.to||'全部'],['業務類別篩選',filters.type||'全部'],['工程狀態篩選',filters.status||'全部'],['有效案件數',a.totals.projects],['案件金額合計_未稅',a.totals.revenue],['已登錄成本',a.totals.cost],['估算毛利',a.totals.profit],['估算毛利率',a.totals.margin??'無法計算'],['已收款',a.totals.collected],['預估未收款',a.totals.uncollected],['統計說明','毛利分析不含已取消案件；已取消案件仍列於明細；耗材庫存清冊顯示全庫；工程需求及領料依工程篩選'],['重要提醒','案件金額可能是預估報價；成本可能尚未登齊，毛利與毛利率僅供管理估算，並非會計認列獲利']]
   };
   return [...new Set(keys)].filter(k=>columns[k]).map(k=>({name:columns[k].name,headers:columns[k].headers,rows:rows[k]}));

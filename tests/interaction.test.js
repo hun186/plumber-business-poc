@@ -76,3 +76,80 @@ test('quote dialog includes visible insertion feedback and starts with valid mai
  assert.match(appScript,/CatalogUI\.quotePicker\(addRow\)/);
  assert.match(appScript,/state\.page=pageNames\[hash\]\?hash:'dashboard';render\(\);try\{const r=await fetch\('\/api\/status'\)/);
 });
+
+test('package inspector previews nested priced tasks, each material, and edit actions safely',()=>{
+ const workTemplates=[
+  {id:'w-head',kind:'package',name:'整修方案',defaultQty:1},
+  {id:'w-group',kind:'package',name:'電力',parentId:'w-head',defaultQty:2},
+  {id:'w-socket',kind:'task',name:'插座 <script>alert(1)</script>',parentId:'w-group',defaultQty:3,unit:'處',unitPrice:950,materials:[{itemId:'i-wire',qty:1.5},{itemId:'i-box',qty:1}]}
+ ];
+ const stock=[{id:'i-wire',name:'電線',unit:'米'},{id:'i-box',name:'底盒',unit:'個'}];
+ const sandbox={state:{data:{workTemplates,inventoryItems:stock}},CatalogKit:kit,money:n=>'NT$ '+n,
+  esc:s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))};
+ const ui=vm.runInNewContext(pickerScript+'\nCatalogUI;',sandbox,{filename:'catalog-ui.js'});
+ const html=ui.selectedPreviewHTML('w-head');
+ assert.match(html,/整修方案 \/ 電力 \/ 插座/);
+ assert.match(html,/包含 1 個計價工項/);
+ assert.match(html,/NT\$ 5700/);
+ assert.match(html,/電線 × 9 米/);
+ assert.match(html,/底盒 × 6 個/);
+ assert.match(html,/data-preview-edit-template="w-head"/);
+ assert.match(html,/data-preview-edit-template="w-socket"/);
+ assert.doesNotMatch(html,/<script>/);
+ const snapshot=ui.quoteLinePreviewHTML({catalogId:'w-socket',name:'過去報價',unit:'處',materials:[{itemId:'i-wire',qty:1.5}]},4);
+ assert.match(snapshot,/電線：6 米/);
+ assert.match(snapshot,/快照/);
+ assert.match(snapshot,/編輯原始工項範本/);
+});
+
+test('floating quote-template preview offers direct edit with unsaved-quote confirmation',()=>{
+ const chosen={id:'w-plan',kind:'package',name:'辦公室套裝',defaultQty:1,unit:'式',unitPrice:0,materials:[],note:''};
+ const child={id:'w-task',kind:'task',name:'配線施工',parentId:'w-plan',defaultQty:2,unit:'處',unitPrice:300,materials:[]};
+ const button={},selector={value:'w-plan',addEventListener(type,fn){this[type]=fn}},
+  feedback={textContent:'',className:''},events={},navigator=[],savedModals=[];
+ const previewTrigger={setAttribute(k,v){this[k]=v},getBoundingClientRect(){return {left:180,top:120,bottom:144}},addEventListener(k,v){events[k]=v},matches(){return false}};
+ let floating,approve=false;
+ const root={contains(element){return element===floating},appendChild(element){floating=element}};
+ const node=()=>({
+  style:{},hidden:true,offsetHeight:280,
+  events:{},setAttribute(k,v){this[k]=v},
+  addEventListener(k,v){this.events[k]=v},contains(){return false},matches(){return false}
+ });
+ const itemsById={'#quote-template-add':button,'#quote-template':selector,'#quote-template-feedback':feedback,
+  '#quote-template-inspect':previewTrigger,'#modal-root':root,'#add-recipe':{}};
+ const sandbox={
+  state:{data:{workTemplates:[chosen,child],inventoryItems:[]}},CatalogKit:kit,
+  $:q=>itemsById[q]||null,$$:()=>[],
+  document:{createElement:()=>node(),activeElement:null},
+  window:{innerWidth:1024,innerHeight:768},
+  money:n=>'NT$ '+n,esc:s=>String(s??''),
+  toast(){},confirm(){return approve},
+  closeModal(){navigator.push('closed')},nav(page){navigator.push(page)},
+  openModal(name,html){savedModals.push({name,html})},
+  field:(...args)=>'<span>'+args[1]+'</span>'
+ };
+ const ui=vm.runInNewContext(pickerScript+'\nCatalogUI;',sandbox,{filename:'catalog-ui.js'});
+ ui.quotePicker(()=>{});
+ assert.equal(typeof events.mouseenter,'function');
+ events.mouseenter();
+ assert.equal(floating.hidden,false);
+ assert.match(floating.innerHTML,/辦公室套裝/);
+ assert.match(floating.innerHTML,/配線施工/);
+ assert.match(floating.innerHTML,/data-preview-edit-template="w-plan"/);
+ assert.equal(previewTrigger['aria-expanded'],'true');
+ const event={target:{closest:selector=>selector==='[data-preview-edit-template]'?{dataset:{previewEditTemplate:'w-task'}}:null}};
+ floating.events.click(event);
+ assert.deepEqual(navigator,[],'Declining confirmation must preserve the open quote');
+ approve=true;
+ floating.events.click(event);
+ assert.deepEqual(navigator,['closed','catalog']);
+ assert.equal(savedModals.length,1);
+ assert.match(savedModals[0].name,/編輯工項/);
+ assert.equal(previewTrigger['aria-expanded'],'false');
+});
+
+test('quote editor exposes template inspector and per-line BOM snapshot buttons',()=>{
+ assert.match(appScript,/id="quote-template-inspect"/);
+ assert.match(appScript,/class="quote-line-inspect"/);
+ assert.match(appScript,/CatalogUI\.bindQuoteLinePreview\(tr\)/);
+});

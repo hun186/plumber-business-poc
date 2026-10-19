@@ -22,7 +22,7 @@ const InventoryUI=(()=>{
   const coverage=BusinessReports.materialCoverage(state.data);
   const rows=plans().map(r=>{const i=item(r.itemId),used=issued(r.projectId,r.itemId),left=coverage.remaining.get(r.id)||0,shared=coverage.byItem.get(r.itemId),cancelled=state.data.projects.some(p=>p.id===r.projectId&&p.status==='已取消');
    const readiness=cancelled?'<span class="stock-warning">案件已取消</span>':shared?.shortfall>0?'<span class="stock-warning">整體備料不足（共缺 '+fmt(shared.shortfall)+' '+esc(i.unit)+'）</span>':'<span class="stock-ok">可備料</span>';
-   return '<tr><td>'+esc(project(r.projectId).title)+'</td><td>'+esc(i.name)+'</td><td>'+fmt(r.plannedQty)+' '+esc(i.unit)+'</td><td>'+fmt(used)+'</td><td>'+fmt(left)+'</td><td>'+fmt(i.stock)+'</td><td>'+readiness+'</td><td><button class="action-link" data-edit-plan="'+esc(r.id)+'">編輯</button><button class="action-link" data-issue-plan="'+esc(r.id)+'">領料</button></td></tr>'}).join('');
+   return '<tr><td>'+esc(project(r.projectId).title)+'</td><td>'+esc(i.name)+'</td><td>'+fmt(r.plannedQty)+' '+esc(i.unit)+'</td><td>'+fmt(used)+'</td><td>'+fmt(left)+'</td><td>'+fmt(i.stock)+'</td><td>'+readiness+'</td><td>'+(r.source==='quote'?'<span class="sub">估價單備料</span>':'<button class="action-link" data-edit-plan="'+esc(r.id)+'">編輯</button>')+'<button class="action-link" data-issue-plan="'+esc(r.id)+'">領料</button></td></tr>'}).join('');
   return head('materials','工程用料規劃','預計材料需求、已領用數量與待領數量。','<button class="btn primary" data-create-plan>＋ 登記需求</button>')+
     '<div class="banner">用料計畫不扣庫存；實際「工程領料」才扣庫存並計入該工程材料成本。備料狀態按全部未取消案件的共用庫存需求判斷，未指定工程領料優先順序。</div><section class="panel">'+table(['工程案件','所需耗材','預計數量','已領用','待領用','庫存量','備料狀況','操作'],rows)+'</section>';
  }

@@ -9,3 +9,24 @@
 .stock-warning{display:inline-block;background:#fff1d5;color:#a55a12;font-weight:800;border-radius:6px;padding:5px 9px}
 .stock-ok{display:inline-block;background:#e5f7ee;color:#16784d;font-weight:700;border-radius:6px;padding:5px 9px}
 .inventory-later{margin-top:20px}
+
+/* v0.4 grouped sidebar: the NAV scrolls without moving the page. */
+.sidebar{height:100dvh;min-height:0;overflow:hidden}
+.sidebar nav{display:block;flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;padding:0 12px 10px;scrollbar-width:thin;scrollbar-color:#527285 transparent}
+.sidebar nav>button,.sidebar nav .nav-children button{width:100%;margin:2px 0;min-height:39px}
+.sidebar nav details{margin:8px 0}
+.sidebar nav summary{list-style:none;cursor:pointer;color:#cee0e8;border-radius:9px;padding:11px 12px;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:space-between}
+.sidebar nav summary::-webkit-details-marker{display:none}
+.sidebar nav summary:hover,.sidebar nav summary:focus-visible{background:#24495b}
+.sidebar nav summary span{transition:transform .15s}
+.sidebar nav details:not([open]) summary span{transform:rotate(-90deg)}
+.sidebar nav .nav-children{padding-left:12px;border-left:1px solid #315064;margin-left:13px}
+.sidebar .brand,.sidebar .nav-label,.sidebar .side-bottom{flex-shrink:0}
+.sidebar .brand{padding-bottom:17px}
+.sidebar .side-bottom{margin-top:0;padding:12px 17px;font-size:11px}
+.sidebar .side-bottom p{margin:5px 0}
+.quote-template-picker{display:flex;align-items:center;gap:9px;flex-wrap:wrap;background:#f1f7f6;padding:10px;border-radius:9px;margin:10px 0}
+.quote-template-picker label{font-weight:600;flex-basis:100%}
+.quote-template-picker select{flex:1;min-width:180px;border:1px solid #d5e0e5;padding:7px;border-radius:7px;background:white}
+#recipe-table select,#recipe-table input{width:100%;min-width:90px}
+@media(max-height:680px){.sidebar .side-bottom p{display:none}.sidebar .side-bottom{padding:8px 14px}.sidebar .brand{padding:15px}.sidebar .nav-label{padding:3px 15px}}

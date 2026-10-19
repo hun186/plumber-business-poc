@@ -95,8 +95,8 @@ const InventoryUI=(()=>{
   $$('[data-edit-item]').forEach(b=>b.onclick=()=>itemForm(item(b.dataset.editItem)));
   $$('[data-move-item]').forEach(b=>b.onclick=()=>moveForm(b.dataset.moveItem));
   const newPlan=$('[data-create-plan]');if(newPlan)newPlan.onclick=()=>planForm();
-  $('[data-edit-plan]').forEach(b=>b.onclick=()=>planForm(plans().find(p=>p.id===b.dataset.editPlan)));
-  $('[data-manual-plan]').forEach(b=>b.onclick=()=>planForm(plans().find(p=>p.id===b.dataset.manualPlan)));
+  $$('[data-edit-plan]').forEach(b=>b.onclick=()=>planForm(plans().find(p=>p.id===b.dataset.editPlan)));
+  $$('[data-manual-plan]').forEach(b=>b.onclick=()=>planForm(plans().find(p=>p.id===b.dataset.manualPlan)));
   $$('[data-issue-plan]').forEach(b=>b.onclick=()=>{const p=plans().find(r=>r.id===b.dataset.issuePlan);moveForm(p.itemId,'issue',p.projectId,Math.max(0.001,n(p.plannedQty)-issued(p.projectId,p.itemId)))});
  }
  return {renderInventory,renderRequirements,alerts,bind};

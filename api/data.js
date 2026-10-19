@@ -39,7 +39,17 @@ function validate(cfg,p,conn,action) {
   const merged={...current,...p};
   if(action==='add'||Object.hasOwn(p,'items')){
    if(!Array.isArray(merged.items)||!merged.items.length||merged.items.length>100)invalid('估價工項數量不合法');
-   for(const i of merged.items)if(!i||typeof i.name!=='string'||!i.name.trim()||i.name.length>200||typeof i.unit!=='string'||i.unit.length>30||!Number.isFinite(Number(i.qty))||Number(i.qty)<=0||!Number.isFinite(Number(i.price))||Number(i.price)<0)invalid('估價工項內容不合法');
+   for(const i of merged.items){
+    if(!i||typeof i.name!=='string'||!i.name.trim()||i.name.length>200||typeof i.unit!=='string'||i.unit.length>30||!Number.isFinite(Number(i.qty))||Number(i.qty)<=0||!Number.isFinite(Number(i.price))||Number(i.price)<0)invalid('估價工項內容不合法');
+    if(i.materials!==undefined){
+     if(!Array.isArray(i.materials)||i.materials.length>80)invalid('估價材料配方格式錯誤');
+     const seen=new Set();
+     for(const m of i.materials){
+      if(!m||typeof m.itemId!=='string'||!/^i-[a-zA-Z0-9-]{2,76}$/.test(m.itemId)||seen.has(m.itemId)||!Number.isFinite(Number(m.qty))||Number(m.qty)<=0||!/^(?:0|[1-9]\\d*)(?:\\.\\d{1,3})?$/.test(String(m.qty)))invalid('估價材料用量不合法');
+      seen.add(m.itemId);
+     }
+    }
+   }
   }
   if(!Number.isFinite(Number(merged.taxRate))||Number(merged.taxRate)<0||Number(merged.taxRate)>100)invalid('營業稅率必須為 0–100');
   const match=conn.prepare('SELECT customer_id AS customerId FROM projects WHERE id=?').get(merged.projectId);

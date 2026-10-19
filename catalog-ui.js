@@ -32,6 +32,7 @@ const CatalogUI=(()=>{
      if(!ancestor||ancestor.kind!=='package')throw Error('父項必須為包項');
      while(ancestor){if(seen.has(ancestor.id)||++depth>=12)throw Error('工項層級不可循環');seen.add(ancestor.id);ancestor=all.find(x=>x.id===ancestor.parentId)}
     }
+    CatalogKit.ensureHierarchyDepth(all,p);
     const used=new Set();for(const m of p.materials){if(!items().some(x=>x.id===m.itemId)||used.has(m.itemId)||!(m.qty>0)||!/^(?:0|[1-9]\d*)(?:\.\d{1,3})?$/.test(String(m.qty)))throw Error('材料配方重複或數量不合法');used.add(m.itemId)}
     if(action==='add')all.push(p);else Object.assign(found,p);
     saveLocal();

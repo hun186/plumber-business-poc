@@ -45,5 +45,38 @@
   data.materialRequirements=(data.materialRequirements||[]).filter(row=>
    !(row.source==='quote'&&(row.sourceQuoteId===quoteId||(projectId!==null&&row.projectId===projectId))));
  }
- return {flatten,quoteMaterials,clearQuotePlans,round3};
+
+ function ensureHierarchyDepth(templates,changed,max=12){
+  const nodes=new Map(templates.map(t=>[t.id,{...t}]));
+  nodes.set(changed.id,{...(nodes.get(changed.id)||{}),...changed});
+  let cursor=changed.parentId||null,ancestors=0;
+  const seenAncestors=new Set([changed.id]);
+  while(cursor){
+   if(seenAncestors.has(cursor))throw new Error('工項不可放在自身或後代底下');
+   seenAncestors.add(cursor);
+   const parent=nodes.get(cursor);
+   if(!parent)throw new Error('找不到父層包項');
+   if(parent.kind&&parent.kind!=='package')throw new Error('父層必須為包項');
+   ancestors++;
+   if(ancestors>=max)throw new Error('工項最多 '+max+' 層');
+   cursor=parent.parentId||null;
+  }
+  const children=new Map();
+  for(const node of nodes.values()){
+   if(!node.parentId)continue;
+   const arr=children.get(node.parentId)||[];
+   arr.push(node.id);
+   children.set(node.parentId,arr);
+  }
+  const visited=new Set(),stack=[{id:changed.id,depth:1}];
+  while(stack.length){
+   const {id,depth}=stack.pop();
+   if(visited.has(id))throw new Error('工項層級出現循環');
+   visited.add(id);
+   if(ancestors+depth>max)throw new Error('工項含子工項的總層級不可超過 '+max+' 層');
+   for(const childId of children.get(id)||[])stack.push({id:childId,depth:depth+1});
+  }
+  return true;
+ }
+ return {flatten,quoteMaterials,clearQuotePlans,ensureHierarchyDepth,round3};
 });

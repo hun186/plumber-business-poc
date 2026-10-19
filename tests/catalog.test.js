@@ -131,3 +131,29 @@ test('demo catalog depth guard matches 12-level SQLite limit and quote form uses
  assert.doesNotMatch(app,/(?<!\$)\$\('#nav details'\)\.forEach/);
  assert.match(app,/CatalogKit\.clearQuotePlans\(state\.data,payload\.id\)/);
 });
+
+test('moving an existing package subtree cannot make the deepest descendant level thirteen',()=>{
+ const kit=require('../catalog-kit');
+ const rootA={id:'w-root-a',kind:'package',parentId:null};
+ const rootB={id:'w-root-b',kind:'package',parentId:null};
+ const items=[rootA,rootB];
+ let parent='w-root-a';
+ for(let level=2;level<=7;level++){
+  const id='w-a-'+level;items.push({id,kind:'package',parentId:parent});parent=id;
+ }
+ const subtreeRoot='w-a-4';
+ let otherParent='w-root-b';
+ for(let level=2;level<=10;level++){
+  const id='w-b-'+level;items.push({id,kind:'package',parentId:otherParent});otherParent=id;
+ }
+ assert.equal(kit.ensureHierarchyDepth(items,{id:subtreeRoot,parentId:'w-root-a',kind:'package'}),true);
+ assert.throws(()=>kit.ensureHierarchyDepth(items,{id:subtreeRoot,parentId:'w-b-10',kind:'package'}),/12 層/);
+ assert.throws(()=>kit.ensureHierarchyDepth(items,{id:'w-root-a',parentId:'w-a-7',kind:'package'}),/自身|後代/);
+});
+test('SQLite rejects relocating a populated subtree past the level limit without changing its parent',()=>{
+ upsertCatalog('add',pkg('w-rehome','新包項'),db);
+ let p='w-rehome';
+ for(let j=2;j<=5;j++){const next='w-rel-'+j;upsertCatalog('add',pkg(next,'子層',p),db);p=next;}
+ assert.throws(()=>upsertCatalog('update',pkg('w-rehome','新包項','w-depth-10'),db),/12 層/);
+ assert.equal(snapshot(db).workTemplates.find(t=>t.id==='w-rehome').parentId,null);
+});

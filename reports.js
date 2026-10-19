@@ -14,6 +14,9 @@
   byType:{name:'類別毛利統計',headers:['業務類別','案件數','案件金額','登錄成本','估算毛利','估算毛利率','收款金額']},
   byCost:{name:'成本類別統計',headers:['成本類型','筆數','金額','成本占比']},
   profit:{name:'個案毛利分析',headers:['案件編號','工程名稱','業務類別','案件狀態','客戶','案件金額','登錄成本','估算毛利','估算毛利率','收款金額']},
+  inventory:{name:'耗材庫存清冊',headers:['料號','品名','單位','庫存量','警戒量','單位成本','估算庫存價值','告警狀態','備註']},
+  materialNeeds:{name:'工程材料需求',headers:['案件編號','工程名稱','料號','耗材','單位','預計需求','已領用','待領用','庫存量','備料狀態','備註']},
+  stockMoves:{name:'庫存異動紀錄',headers:['異動編號','日期','料號','耗材','異動類型','數量','記錄單價','歸屬工程','備註']},
   summary:{name:'營運摘要',headers:['指標','數值']}
  };
  function selected(data,filters={},includeCanceled=false){
@@ -44,10 +47,39 @@
   const byCost=[...costTypeMap.values()].map(x=>({...x,share:cost?x.amount/cost:null})).sort((a,b)=>b.amount-a.amount);
   return {selection:s,profitRows,byType,byCost,totals:{projects:profitRows.length,revenue,cost,profit:revenue-cost,margin:revenue?(revenue-cost)/revenue:null,collected,uncollected:sum(profitRows,x=>Math.max(0,x.revenue-x.collected))}};
  }
+
+ function materialCoverage(data){
+  const projectById=new Map((data.projects||[]).map(p=>[p.id,p]));
+  const issues=new Map();
+  const pair=(projectId,itemId)=>JSON.stringify([projectId,itemId]);
+  for(const movement of data.inventoryMovements||[]){
+   if(movement.kind!=='issue')continue;
+   const key=pair(movement.projectId,movement.itemId);
+   issues.set(key,n(issues.get(key))-n(movement.qty));
+  }
+  const remaining=new Map(), demand=new Map();
+  for(const req of data.materialRequirements||[]){
+   const left=Math.max(0,Math.round((n(req.plannedQty)-n(issues.get(pair(req.projectId,req.itemId))))*1000)/1000);
+   remaining.set(req.id,left);
+   const project=projectById.get(req.projectId);
+   if(project&&project.status!=='已取消')demand.set(req.itemId,n(demand.get(req.itemId))+left);
+  }
+  const byItem=new Map();
+  for(const item of data.inventoryItems||[]){
+   const totalDemand=Math.round(n(demand.get(item.id))*1000)/1000;
+   const available=Math.max(0,n(item.stock));
+   byItem.set(item.id,{stock:available,totalDemand,shortfall:Math.max(0,Math.round((totalDemand-available)*1000)/1000)});
+  }
+  return {remaining,byItem};
+ }
  function quoteTotal(q){const subtotal=sum(q.items||[],i=>n(i.qty)*n(i.price));const tax=Math.round(subtotal*n(q.taxRate)/100);return {subtotal,tax,total:subtotal+tax}}
  function sheets(data,filters={},keys=Object.keys(columns)){
   const a=analyze(data,filters),s=selected(data,filters,true),projMap=s.byId,customers=s.custById;
   const costByProject=new Map(),paidByProject=new Map(),profitByProject=new Map(a.profitRows.map(p=>[p.id,p]));for(const c of s.costs)costByProject.set(c.projectId,n(costByProject.get(c.projectId))+n(c.amount));for(const p of s.payments)paidByProject.set(p.projectId,n(paidByProject.get(p.projectId))+n(p.amount));
+  const coverage=materialCoverage(data);
+  const inventoryMap=new Map((data.inventoryItems||[]).map(i=>[i.id,i]));const selectedProjects=new Set(s.projects.map(p=>p.id));const allMovements=data.inventoryMovements||[];
+  const used=(projectId,itemId)=>-allMovements.filter(m=>m.kind==='issue'&&m.projectId===projectId&&m.itemId===itemId).reduce((n,m)=>n+Number(m.qty||0),0);
+  const noFilters=!filters.from&&!filters.to&&!filters.type&&!filters.status;
   const rows={
    customers:s.customers.map(columns.customers.row),
    projects:s.projects.map(p=>{const pr=profitByProject.get(p.id);return [p.id,p.customerId,customers.get(p.customerId)?.name||'',p.title,p.type,p.status,p.startDate,p.dueDate,n(p.amount),n(paidByProject.get(p.id)),n(costByProject.get(p.id)),pr?.profit??'',pr?.margin??'',p.note]}),
@@ -58,9 +90,12 @@
    byType:a.byType.map(x=>[x.type,x.count,x.revenue,x.cost,x.profit,x.margin,x.collected]),
    byCost:a.byCost.map(x=>[x.category,x.count,x.amount,x.share]),
    profit:a.profitRows.map(x=>[x.id,x.title,x.type,x.status,x.customer,x.revenue,x.cost,x.profit,x.margin,x.collected]),
-   summary:[['報表範圍_開始日',filters.from||'全部'],['報表範圍_結束日',filters.to||'全部'],['業務類別篩選',filters.type||'全部'],['工程狀態篩選',filters.status||'全部'],['有效案件數',a.totals.projects],['案件金額合計_未稅',a.totals.revenue],['已登錄成本',a.totals.cost],['估算毛利',a.totals.profit],['估算毛利率',a.totals.margin??'無法計算'],['已收款',a.totals.collected],['預估未收款',a.totals.uncollected],['統計說明','毛利統計不含已取消案件；業務明細保留符合篩選的已取消案件；依案件開始日期篩選，成本與收款採全期間明細'],['重要提醒','案件金額可能是預估報價；成本可能尚未登齊，毛利與毛利率僅供管理估算，並非會計認列獲利']]
+   inventory:(data.inventoryItems||[]).map(i=>[i.sku,i.name,i.unit,n(i.stock),n(i.alertQty),n(i.unitCost),n(i.stock)*n(i.unitCost),n(i.stock)<=n(i.alertQty)?'低庫存':'正常',i.note]),
+   materialNeeds:(data.materialRequirements||[]).filter(r=>selectedProjects.has(r.projectId)).map(r=>{const i=inventoryMap.get(r.itemId)||{},usedQty=used(r.projectId,r.itemId),rest=coverage.remaining.get(r.id)||0,shared=coverage.byItem.get(r.itemId),cancelled=projMap.get(r.projectId)?.status==='已取消';const readiness=cancelled?'案件已取消':shared?.shortfall>0?`整體備料不足（共缺 ${shared.shortfall}）`:'可備料';return [r.projectId,projMap.get(r.projectId)?.title||'',i.sku||'',i.name||'',i.unit||'',n(r.plannedQty),usedQty,rest,n(i.stock),readiness,r.note]}),
+   stockMoves:allMovements.filter(m=>noFilters||(m.projectId&&selectedProjects.has(m.projectId))).map(m=>{const i=inventoryMap.get(m.itemId)||{};return [m.id,m.date,i.sku||'',i.name||'',{receive:'進貨入庫',issue:'工程領料',adjust:'盤點調整'}[m.kind]||m.kind,n(m.qty),n(m.unitCost),m.projectId?projMap.get(m.projectId)?.title||'':'',m.note]}),
+   summary:[['報表範圍_開始日',filters.from||'全部'],['報表範圍_結束日',filters.to||'全部'],['業務類別篩選',filters.type||'全部'],['工程狀態篩選',filters.status||'全部'],['有效案件數',a.totals.projects],['案件金額合計_未稅',a.totals.revenue],['已登錄成本',a.totals.cost],['估算毛利',a.totals.profit],['估算毛利率',a.totals.margin??'無法計算'],['已收款',a.totals.collected],['預估未收款',a.totals.uncollected],['統計說明','毛利分析不含已取消案件；已取消案件仍列於明細；耗材庫存清冊顯示全庫；工程需求及領料依工程篩選'],['重要提醒','案件金額可能是預估報價；成本可能尚未登齊，毛利與毛利率僅供管理估算，並非會計認列獲利']]
   };
   return [...new Set(keys)].filter(k=>columns[k]).map(k=>({name:columns[k].name,headers:columns[k].headers,rows:rows[k]}));
  }
- return {analyze,selected,sheets,columns,quoteTotal};
+ return {analyze,selected,sheets,columns,quoteTotal,materialCoverage};
 });

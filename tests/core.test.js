@@ -104,7 +104,8 @@ test('Codex P2: XLSX uses Excel percentage formats for margins and cost shares',
  const book=reports.sheets(sample,{type:'維修保養'},['byType','byCost','profit','summary']);
  const bytes=xlsx.buildWorkbook(book);
  const xml=Buffer.from(bytes).toString('utf8'); // ZIP uses STORE so OOXML is embedded verbatim
- assert.match(xml, /<cellXfs count="4">/);
+ assert.match(xml, /<cellXfs count="5">/);
+ assert.match(xml, /<xf numFmtId="164"[^>]*applyNumberFormat="1"\/>/);
  assert.match(xml, /<xf numFmtId="10"[^>]*applyNumberFormat="1"\/>/);
  assert.match(xml, /<c r="F2" s="3"><v>0\.5<\/v><\/c>/);
  assert.match(xml, /<c r="D2" s="3"><v>0\.6<\/v><\/c>/);

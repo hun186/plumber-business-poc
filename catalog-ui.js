@@ -64,12 +64,118 @@ const CatalogUI=(()=>{
   $('#add-recipe').onclick=()=>recipeRow();
   for(const m of t.materials||[])recipeRow(m);
  }
+ function selectedPreviewHTML(templateId){
+  const t=list().find(x=>x.id===templateId);
+  if(!t)return '<p class="sub">先選擇一個套裝包項或工項，即可查看內容。</p>';
+  let html='<div class="quote-preview-header"><b>'+esc(t.name)+'</b><span>'+(t.kind==='package'?'套裝包項':'單一工項')+'</span></div>';
+  try{
+   const lines=CatalogKit.flatten(list(),templateId);
+   const total=lines.reduce((sum,line)=>sum+Number(line.qty)*Number(line.price),0);
+   html+='<div class="quote-preview-meta">包含 '+lines.length+' 個計價工項 · 參考未稅金額 '+money(total)+'</div>';
+   html+='<div class="quote-preview-lines">';
+   for(const line of lines){
+    const recipe=(line.materials||[]).map(m=>{
+     const i=items().find(x=>x.id===m.itemId);
+     return esc(i?.name||'未知耗材')+' × '+esc(CatalogKit.round3(Number(line.qty)*Number(m.qty)))+' '+esc(i?.unit||'');
+    });
+    html+='<div class="quote-preview-line"><div class="quote-preview-line-title"><strong>'+esc(line.name)+'</strong><button type="button" class="action-link" data-preview-edit-template="'+esc(line.catalogId)+'" aria-label="編輯 '+esc(line.name)+' 工項範本">編輯</button></div>'+
+     '<div class="quote-preview-meta">'+esc(line.qty)+' '+esc(line.unit)+' × '+money(line.price)+' = '+money(Number(line.qty)*Number(line.price))+'</div>'+
+     '<div class="quote-preview-material">'+(recipe.length?recipe.join('、'):'尚未設定材料組合')+'</div></div>';
+   }
+   html+='</div>';
+  }catch(error){html+='<p class="quote-preview-error">'+esc(error.message||'範本無法展開')+'</p>'}
+  html+='<div class="quote-preview-footer"><button type="button" class="btn small" data-preview-edit-template="'+esc(t.id)+'">編輯此'+(t.kind==='package'?'包項':'工項')+'範本</button><span>修改範本不會追溯改變已儲存的報價。</span></div>';
+  return html;
+ }
+ function quoteLinePreviewHTML(meta,quantity){
+  const amount=Number(quantity);
+  const recipe=(meta.materials||[]).map(m=>{
+   const i=items().find(x=>x.id===m.itemId);
+   const qty=Number.isFinite(amount)&&amount>0?CatalogKit.round3(amount*Number(m.qty)):Number(m.qty);
+   return '<li>'+esc(i?.name||'未知耗材')+'：'+esc(qty)+' '+esc(i?.unit||'')+'</li>';
+  }).join('');
+  return '<div class="quote-preview-header"><b>這張估價單的材料配方快照</b></div>'+
+   '<p class="quote-preview-meta">'+esc(meta.name)+' · '+esc(Number.isFinite(amount)?amount:'—')+' '+esc(meta.unit)+'</p>'+
+   (recipe?'<ul class="quote-preview-recipe">'+recipe+'</ul>':'<p>這個工項沒有設定材料。</p>')+
+   '<div class="quote-preview-footer"><button type="button" class="btn small" data-preview-edit-template="'+esc(meta.catalogId)+'">編輯原始工項範本</button><span>範本變更不會更新本次估價快照。</span></div>';
+ }
+ let floating=null,activeTrigger=null,closingTimer=null,pinned=false;
+ function hidePreview(){
+  if(closingTimer!==null){clearTimeout(closingTimer);closingTimer=null}
+  if(floating)floating.hidden=true;
+  if(activeTrigger)activeTrigger.setAttribute('aria-expanded','false');
+  activeTrigger=null;pinned=false;
+ }
+ function scheduleHide(){
+  if(pinned)return;
+  if(closingTimer!==null)clearTimeout(closingTimer);
+  closingTimer=setTimeout(()=>{
+   closingTimer=null;
+   if(!(activeTrigger?.matches?.(':hover')||floating?.matches?.(':hover')||floating?.contains?.(document.activeElement)))hidePreview();
+  },180);
+ }
+ function openTemplateEditor(id){
+  const entry=list().find(x=>x.id===id);
+  if(!entry)return toast('找不到對應工項範本，可能已經被修改');
+  if(!confirm('確定前往編輯「'+entry.name+'」？\n目前尚未儲存的估價單變更將不會保留；原估價單已有的材料配方快照也不會自動改變。'))return;
+  hidePreview();closeModal();nav('catalog');edit(entry);
+ }
+ function showFloating(trigger,content){
+  const root=$('#modal-root');
+  if(!root||!trigger)return;
+  if(!floating||!root.contains(floating)){
+   floating=document.createElement('section');
+   floating.id='catalog-preview-float';
+   floating.className='catalog-preview-float';
+   floating.setAttribute('role','dialog');
+   floating.setAttribute('aria-label','套裝工項與材料配方預覽');
+   floating.setAttribute('aria-modal','false');
+   root.appendChild(floating);
+   floating.addEventListener('mouseenter',()=>{if(closingTimer!==null){clearTimeout(closingTimer);closingTimer=null}});
+   floating.addEventListener('mouseleave',scheduleHide);
+   floating.addEventListener('click',event=>{
+    const button=event.target.closest('[data-preview-edit-template]');
+    if(button)openTemplateEditor(button.dataset.previewEditTemplate);
+    if(event.target.closest('[data-dismiss-preview]'))hidePreview();
+   });
+   floating.addEventListener('keydown',event=>{if(event.key==='Escape')hidePreview()});
+  }
+  if(activeTrigger&&activeTrigger!==trigger)activeTrigger.setAttribute('aria-expanded','false');
+  activeTrigger=trigger;trigger.setAttribute('aria-expanded','true');
+  floating.innerHTML='<div class="quote-preview-control"><b>套裝／材料內容預覽</b><button type="button" class="quote-preview-close" data-dismiss-preview aria-label="關閉預覽">×</button></div>'+content;
+  floating.hidden=false;
+  const rect=trigger.getBoundingClientRect();
+  const width=Math.min(470,window.innerWidth-24);
+  floating.style.width=width+'px';
+  floating.style.left=Math.max(12,Math.min(rect.left,window.innerWidth-width-12))+'px';
+  const height=floating.offsetHeight||330;
+  const below=rect.bottom+8,above=rect.top-height-8;
+  floating.style.top=Math.max(12,Math.min(below+height<=window.innerHeight-12?below:above>12?above:below,window.innerHeight-Math.min(height,window.innerHeight-24)-12))+'px';
+ }
+ function bindQuoteLinePreview(tr){
+  const button=tr.querySelector('.quote-line-inspect');
+  if(!button||!tr._catalogMeta)return;
+  const show=()=>showFloating(button,quoteLinePreviewHTML(tr._catalogMeta,tr.querySelector('[name=qty]')?.value));
+  button.addEventListener('mouseenter',()=>{pinned=false;show()});
+  button.addEventListener('focus',show);
+  button.addEventListener('mouseleave',scheduleHide);
+  button.addEventListener('click',()=>{if(pinned&&activeTrigger===button)hidePreview();else{pinned=true;show()}});
+ }
  function quotePicker(addRow){
   const button=$('#quote-template-add'),selector=$('#quote-template'),feedback=$('#quote-template-feedback');
   if(!button||!selector)return;
   function notify(message,failed=false){
    if(feedback){feedback.textContent=message;feedback.className='quote-template-feedback '+(failed?'is-error':'is-success')}
    toast(message);
+  }
+  const inspect=$('#quote-template-inspect');
+  if(inspect){
+   const show=()=>showFloating(inspect,selectedPreviewHTML(selector.value));
+   inspect.addEventListener('mouseenter',()=>{pinned=false;show()});
+   inspect.addEventListener('focus',show);
+   inspect.addEventListener('mouseleave',scheduleHide);
+   inspect.onclick=()=>{if(pinned&&activeTrigger===inspect)hidePreview();else{pinned=true;show()}};
+   selector.addEventListener('change',()=>{if(floating&&!floating.hidden&&activeTrigger===inspect)show()});
   }
   button.onclick=()=>{
    if(!selector.value)return notify('請先選擇包項或工項',true);
@@ -112,5 +218,5 @@ const CatalogUI=(()=>{
   $$('[data-child-template]').forEach(b=>b.onclick=()=>edit(null,b.dataset.childTemplate));
   $$('[data-sync-quote]').forEach(b=>b.onclick=()=>syncQuote(b.dataset.syncQuote));
  }
- return {renderCatalog,edit,options,quotePicker,syncQuote,bind};
+ return {renderCatalog,edit,options,quotePicker,syncQuote,bind,selectedPreviewHTML,quoteLinePreviewHTML,bindQuoteLinePreview};
 })();

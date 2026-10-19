@@ -34,3 +34,28 @@
 .quote-template-feedback{width:100%;font-size:13px;min-height:19px;line-height:1.5}
 .quote-template-feedback.is-success{color:#137e78;font-weight:700}
 .quote-template-feedback.is-error{color:#bc4338;font-weight:700}
+
+/* v0.4 quote BOM inspector: floating outside the scroll-clipped quote modal. */
+.quote-item-name{display:flex;align-items:center;gap:6px;min-width:190px}
+.quote-item-name input{min-width:130px;flex:1}
+.quote-line-inspect{border:0;background:#e7f5f1;color:#116e65;border-radius:50%;font-size:14px;font-weight:800;width:25px;height:25px;flex-shrink:0;cursor:help}
+.quote-inspect-trigger{white-space:nowrap}
+.catalog-preview-float{position:fixed;z-index:35;box-sizing:border-box;max-height:calc(100dvh - 28px);overflow-y:auto;background:#fff;border:1px solid #bedbd8;border-radius:13px;padding:15px 17px;box-shadow:0 14px 44px #1733424a;color:#233d4a;font-size:13px;line-height:1.55}
+.catalog-preview-float[hidden]{display:none}
+.quote-preview-control{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #e2edeb;padding-bottom:8px;margin-bottom:10px}
+.quote-preview-control b{font-size:14px}
+.quote-preview-close{border:0;background:#eff4f3;border-radius:6px;width:27px;height:27px;font-size:18px}
+.quote-preview-header{display:flex;gap:8px;align-items:center;justify-content:space-between}
+.quote-preview-header b{font-size:15px}
+.quote-preview-header span{color:#71838a}
+.quote-preview-meta{font-size:12px;color:#687e87;margin:5px 0}
+.quote-preview-lines{display:grid;gap:8px;max-height:290px;overflow-y:auto;margin:10px 0}
+.quote-preview-line{border:1px solid #e4edeb;border-radius:9px;padding:8px 10px;background:#f8fbfa}
+.quote-preview-line-title{display:flex;justify-content:space-between;gap:8px;align-items:start}
+.quote-preview-line-title strong{overflow-wrap:anywhere}
+.quote-preview-material{color:#466772;font-size:12px;overflow-wrap:anywhere}
+.quote-preview-footer{border-top:1px solid #e1ebe9;margin-top:10px;padding-top:11px;display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.quote-preview-footer span{font-size:11px;color:#6a7d86}
+.quote-preview-error{color:#b5453c;font-weight:700}
+.quote-preview-recipe{margin:9px 0;padding-left:20px}
+.quote-inspect-trigger:focus-visible,.quote-line-inspect:focus-visible,.quote-preview-close:focus-visible{outline:2px solid #159b89;outline-offset:2px}

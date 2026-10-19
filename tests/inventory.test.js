@@ -76,3 +76,46 @@ test('duplicate key errors from node:sqlite contain recognizable constraint deta
  const conflict=[1555,2067].includes(Number(error.errcode))||/UNIQUE constraint failed|PRIMARY KEY constraint failed/i.test(String(error.message||''));
  assert.equal(conflict,true);
 });
+
+test('XLSX warehouse quantity columns retain up to three decimals in displayed number format',()=>{
+ const xlsx=require('../xlsx-lite');
+ const workbook=xlsx.buildWorkbook([
+  {name:'耗材庫存清冊',headers:reports.columns.inventory.headers,rows:[['P-1','水管','米',1.001,0.001,10,10.01,'正常','']]},
+  {name:'工程材料需求',headers:reports.columns.materialNeeds.headers,rows:[['p','工程','P-1','水管','米',1.001,0.001,1,5,'可備料','']]},
+  {name:'庫存異動紀錄',headers:reports.columns.stockMoves.headers,rows:[['m','2026-10-20','P-1','水管','領用',-1.001,10,'p','']]}
+ ]);
+ const bytes=Buffer.from(workbook).toString('utf8');
+ assert.match(bytes,/<numFmt numFmtId="164" formatCode="#,##0\.###"\/>/);
+ assert.match(bytes,/<cellXfs count="5">/);
+ assert.match(bytes,/<c r="D2" s="4"><v>1\.001<\/v><\/c>/);
+ assert.match(bytes,/<c r="E2" s="4"><v>0\.001<\/v><\/c>/);
+ assert.match(bytes,/<c r="F2" s="4"><v>1\.001<\/v><\/c>/);
+ assert.match(bytes,/<c r="F2" s="4"><v>-1\.001<\/v><\/c>/);
+});
+test('browser demo blocks unit changes after a plan and rejects negative receipt price',async()=>{
+ const vm=require('node:vm');
+ const script=fs.readFileSync(path.join(__dirname,'../inventory-ui.js'),'utf8');
+ const item={id:'i-demo',sku:'D-01',name:'水管',unit:'米',unitCost:10,alertQty:0,stock:3,note:''};
+ const saved=[],messages=[],buttons={
+  edit:{dataset:{editItem:'i-demo'}},
+  move:{dataset:{moveItem:'i-demo'}}
+ };
+ let formSubmit;
+ const sandbox={
+  state:{server:false,data:{inventoryItems:[item],materialRequirements:[{id:'b-demo',itemId:'i-demo',projectId:'p-demo',plannedQty:2}],inventoryMovements:[],projects:[{id:'p-demo',status:'施工中',title:'工程'}],costs:[]}},
+  $:()=>null,$$:(q)=>q==='[data-edit-item]'?[buttons.edit]:q==='[data-move-item]'?[buttons.move]:[],
+  esc:x=>String(x??''),openModal:(heading,html,fn)=>{formSubmit=fn;},closeModal:()=>{},render:()=>{},
+  toast:s=>messages.push(s),saveLocal:()=>saved.push(true),today:()=>'2026-10-20',
+  uid:p=>p+'-demo02',money:x=>String(x),project:id=>({title:'工程'}),
+  BusinessReports:reports
+ };
+ const ui=vm.runInNewContext(script+'\nInventoryUI;',sandbox);
+ ui.bind();buttons.edit.onclick();
+ formSubmit(new Map([['sku','D-01'],['name','水管'],['unit','包'],['unitCost','10'],['alertQty','0'],['note','']]));
+ assert.equal(item.unit,'米');assert.equal(saved.length,0);
+ assert.ok(messages.some(x=>x.includes('單位')));
+ buttons.move.onclick();
+ formSubmit(new Map([['kind','receive'],['itemId','i-demo'],['projectId',''],['date','2026-10-20'],['qty','1'],['unitCost','-1'],['note','']]));
+ assert.equal(sandbox.state.data.inventoryMovements.length,0);
+ assert.ok(messages.some(x=>x.includes('進貨單價')));
+});

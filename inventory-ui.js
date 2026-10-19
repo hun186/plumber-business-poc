@@ -38,7 +38,7 @@ const InventoryUI=(()=>{
      if(!p.name||!p.sku||!p.unit||n(p.unitCost)<0||n(p.alertQty)<0)throw Error('料件欄位不完整');
      if(list().some(i=>i.id!==p.id&&i.sku===p.sku))throw Error('料號不可重複');
      if(action==='itemAdd')list().push({...p,stock:0});
-     else{const old=item(p.id);if(old.unit!==p.unit&&moves().some(m=>m.itemId===p.id))throw Error('已有出入庫的品項不可修改單位');Object.assign(old,p)}
+     else{const old=item(p.id);if(old.unit!==p.unit&&(moves().some(m=>m.itemId===p.id)||plans().some(r=>r.itemId===p.id)))throw Error('已有出入庫的品項不可修改單位');Object.assign(old,p)}
     }else if(action==='requirementAdd'||action==='requirementUpdate'){
      if(!(n(p.plannedQty)>0)||!quantity3(Number(p.plannedQty)))throw Error('預計用量必須大於零，最多小數三位');
      if(action==='requirementAdd'){
@@ -55,7 +55,8 @@ const InventoryUI=(()=>{
       amount=-amount;
      }
      if(stock(p.itemId)+amount< -0.000001)throw Error('庫存不足，無法領料');
-     const cost=action==='receive'?n(p.unitCost):n(current.unitCost);
+     const cost=action==='receive'?Number(p.unitCost):n(current.unitCost);
+     if(action==='receive'&&(!Number.isFinite(cost)||cost<0))throw Error('進貨單價不得為負數');
      moves().unshift({id:p.id,itemId:p.itemId,projectId:action==='issue'?p.projectId:null,date:p.date,kind:action,qty:amount,unitCost:cost,note:p.note||''});
      current.stock=Math.round(stock(p.itemId)*1000)/1000;
      if(action==='issue')d.costs.push({id:'stock-'+p.id,projectId:p.projectId,date:p.date,category:'材料',amount:Math.round(-amount*cost*100)/100,note:'庫存領料 '+current.name});

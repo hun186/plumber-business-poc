@@ -183,7 +183,10 @@ const CatalogUI=(()=>{
     const lines=CatalogKit.flatten(list(),selector.value);
     if(!lines.length)throw new Error('這個包項沒有可加入的計價工項');
     const old=$$('#items-table tbody tr');
-    if(old.length===1&&!$('[name=itemName]',old[0]).value.trim())old[0].remove();
+    const blank=old.length===1&&!$('[name=itemName]',old[0]).value.trim();
+    const current=old.length-(blank?1:0);
+    if(current+lines.length>100)throw new Error('估價單最多 100 個工項：目前 '+current+' 項，套裝會再加入 '+lines.length+' 項');
+    if(blank)old[0].remove();
     for(const line of lines)addRow(line);
     const latest=$$('#items-table tbody tr').at(-1);
     if(latest&&typeof latest.scrollIntoView==='function')latest.scrollIntoView({block:'nearest',behavior:'smooth'});

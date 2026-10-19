@@ -153,3 +153,29 @@ test('quote editor exposes template inspector and per-line BOM snapshot buttons'
  assert.match(appScript,/class="quote-line-inspect"/);
  assert.match(appScript,/CatalogUI\.bindQuoteLinePreview\(tr\)/);
 });
+
+test('template import rejects combined quotes larger than one hundred items without altering existing rows',()=>{
+ const rows=Array.from({length:99},(_,i)=>({i}));
+ const data={workTemplates:[
+  {id:'w-over',kind:'package',name:'組合',defaultQty:1},
+  {id:'w-first',kind:'task',name:'A',kind:'task',parentId:'w-over',defaultQty:1,unit:'式',unitPrice:100,materials:[]},
+  {id:'w-second',kind:'task',name:'B',parentId:'w-over',defaultQty:1,unit:'式',unitPrice:100,materials:[]}
+ ]};
+ const button={},picker={value:'w-over'},feedback={textContent:'',className:''};
+ const sandbox={
+  state:{data},CatalogKit:kit,
+  $:s=>({'#quote-template-add':button,'#quote-template':picker,'#quote-template-feedback':feedback})[s]||null,
+  $$:q=>q==='#items-table tbody tr'?rows:[],
+  toast(){}
+ };
+ const ui=vm.runInNewContext(pickerScript+'\nCatalogUI;',sandbox);
+ ui.quotePicker(line=>rows.push({line}));
+ button.onclick();
+ assert.equal(rows.length,99);
+ assert.match(feedback.textContent,/最多 100 個工項/);
+ assert.match(feedback.className,/is-error/);
+});
+test('manual quote line addition is guarded by the same row limit',()=>{
+ assert.match(appScript,/if\(\$\$\('#items-table tbody tr'\)\.length>=100\)return toast/);
+ assert.match(appScript,/if\(rows\.length>100\)return toast/);
+});

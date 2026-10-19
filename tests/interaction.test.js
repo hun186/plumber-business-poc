@@ -10,7 +10,7 @@ const pickerScript=fs.readFileSync(path.join(__dirname,'../catalog-ui.js'),'utf8
 
 test('first visit paints overview before a pending status API call settles',()=>{
  const elements=new Map();
- const node=key=>{if(!elements.has(key))elements.set(key,{textContent:'',innerHTML:'',style:{},classList:{add(){},remove(){},toggle(){}},addEventListener(){}});return elements.get(key)};
+ const node=key=>{if(!elements.has(key))elements.set(key,{textContent:'',innerHTML:'',style:{},classList:{add(){},remove(){},toggle(){}},closest(){return null},addEventListener(){}});return elements.get(key)};
  const fakeDocument={
   querySelector:node,
   querySelectorAll:()=>[],

@@ -44,3 +44,35 @@ test('dates, duplicate project needs and canceled jobs are protected',()=>{
 });
 
 test('unit of a planned material cannot change after requirement creation',()=>{assert.throws(()=>processInventory('itemUpdate',{id:'i-wh001',sku:'PIPE-001',name:'水管',unit:'包',unitCost:95,alertQty:5,note:''},db),/計量單位/)});
+
+test('shared stock is checked against all active project demand in UI and Excel data',()=>{
+ const d={
+  customers:[],costs:[],payments:[],quotes:[],inventoryItems:[{id:'i-shared',sku:'SHARED',name:'共用管材',unit:'米',stock:10,alertQty:2,unitCost:1}],
+  projects:[{id:'p-a',title:'工程 A',status:'施工中',type:'給排水工程',amount:800},{id:'p-b',title:'工程 B',status:'施工中',type:'給排水工程',amount:800}],
+  materialRequirements:[{id:'b-a',projectId:'p-a',itemId:'i-shared',plannedQty:8},{id:'b-b',projectId:'p-b',itemId:'i-shared',plannedQty:8}],
+  inventoryMovements:[]
+ };
+ const summary=reports.materialCoverage(d);
+ assert.equal(summary.byItem.get('i-shared').totalDemand,16);
+ assert.equal(summary.byItem.get('i-shared').shortfall,6);
+ const sheet=reports.sheets(d,{},['materialNeeds'])[0];
+ assert.equal(sheet.rows.length,2);
+ assert.ok(sheet.rows.every(row=>row[9].includes('共缺 6')));
+ d.projects[1].status='已取消';
+ assert.equal(reports.materialCoverage(d).byItem.get('i-shared').shortfall,0);
+});
+test('up to three decimals are accepted in stock movements and planned requirements',()=>{
+ processInventory('itemAdd',{id:'i-decimal',sku:'DECIMAL-001',name:'管線',unit:'米',unitCost:5,alertQty:0,note:''},db);
+ processInventory('receive',{id:'m-decimal',itemId:'i-decimal',date:'2026-10-19',qty:1.001,unitCost:5},db);
+ assert.equal(snapshot(db).inventoryItems.find(i=>i.id==='i-decimal').stock,1.001);
+ processInventory('requirementAdd',{id:'b-decimal',projectId:'p-wh',itemId:'i-decimal',plannedQty:1.001},db);
+ assert.equal(snapshot(db).materialRequirements.find(r=>r.id==='b-decimal').plannedQty,1.001);
+ assert.throws(()=>processInventory('receive',{id:'m-invalid-4dp',itemId:'i-decimal',date:'2026-10-19',qty:0.0001},db),/小數三位/);
+});
+test('duplicate key errors from node:sqlite contain recognizable constraint details',()=>{
+ let error;
+ try{processInventory('receive',{id:'m-decimal',itemId:'i-decimal',date:'2026-10-19',qty:1},db)}catch(e){error=e}
+ assert.ok(error);
+ const conflict=[1555,2067].includes(Number(error.errcode))||/UNIQUE constraint failed|PRIMARY KEY constraint failed/i.test(String(error.message||''));
+ assert.equal(conflict,true);
+});

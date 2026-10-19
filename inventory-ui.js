@@ -1,7 +1,7 @@
 /* Inventory pages: common API in SQLite mode, browser-only data in public demo mode. */
 const InventoryUI=(()=>{
  const list=()=>state.data.inventoryItems||[],plans=()=>state.data.materialRequirements||[],moves=()=>state.data.inventoryMovements||[];
- const n=x=>Number(x)||0,fmt=x=>n(x).toLocaleString('zh-TW',{maximumFractionDigits:3}),item=id=>list().find(x=>x.id===id)||{name:'未知耗材',unit:'個'};
+ const n=x=>Number(x)||0,quantity3=x=>Number.isFinite(x)&&/^-?(?:0|[1-9]\d*)(?:\.\d{1,3})?$/.test(String(x)),fmt=x=>n(x).toLocaleString('zh-TW',{maximumFractionDigits:3}),item=id=>list().find(x=>x.id===id)||{name:'未知耗材',unit:'個'};
  const issued=(pid,iid)=>-moves().filter(m=>m.kind==='issue'&&m.projectId===pid&&m.itemId===iid).reduce((s,m)=>s+n(m.qty),0);
  const alerts=()=>list().filter(i=>n(i.stock)<=n(i.alertQty));
  const opts=(rows,value)=>rows.map(([id,title])=>'<option value="'+esc(id)+'" '+(id===value?'selected':'')+'>'+esc(title)+'</option>').join('');
@@ -19,9 +19,12 @@ const InventoryUI=(()=>{
     table(['耗材／料號','單位','現存量','警戒量','單位成本','庫存估價','狀態','操作'],rows)+'</section><section class="panel inventory-later"><h2 class="panel-title">庫存異動紀錄</h2>'+table(['日期','耗材','類別','數量變化','歸屬工程','備註'],history)+'</section><div class="banner">異動紀錄不可直接刪除；錯誤數量請以盤點調整修正，工程領料自動計入材料成本。</div>';
  }
  function renderRequirements(){
-  const rows=plans().map(r=>{const i=item(r.itemId),used=issued(r.projectId,r.itemId),left=Math.max(0,n(r.plannedQty)-used);return '<tr><td>'+esc(project(r.projectId).title)+'</td><td>'+esc(i.name)+'</td><td>'+fmt(r.plannedQty)+' '+esc(i.unit)+'</td><td>'+fmt(used)+'</td><td>'+fmt(left)+'</td><td>'+fmt(i.stock)+'</td><td>'+(left>n(i.stock)?'<span class="stock-warning">備料不足</span>':'<span class="stock-ok">可備料</span>')+'</td><td><button class="action-link" data-edit-plan="'+esc(r.id)+'">編輯</button><button class="action-link" data-issue-plan="'+esc(r.id)+'">領料</button></td></tr>'}).join('');
+  const coverage=BusinessReports.materialCoverage(state.data);
+  const rows=plans().map(r=>{const i=item(r.itemId),used=issued(r.projectId,r.itemId),left=coverage.remaining.get(r.id)||0,shared=coverage.byItem.get(r.itemId),cancelled=state.data.projects.some(p=>p.id===r.projectId&&p.status==='已取消');
+   const readiness=cancelled?'<span class="stock-warning">案件已取消</span>':shared?.shortfall>0?'<span class="stock-warning">整體備料不足（共缺 '+fmt(shared.shortfall)+' '+esc(i.unit)+'）</span>':'<span class="stock-ok">可備料</span>';
+   return '<tr><td>'+esc(project(r.projectId).title)+'</td><td>'+esc(i.name)+'</td><td>'+fmt(r.plannedQty)+' '+esc(i.unit)+'</td><td>'+fmt(used)+'</td><td>'+fmt(left)+'</td><td>'+fmt(i.stock)+'</td><td>'+readiness+'</td><td><button class="action-link" data-edit-plan="'+esc(r.id)+'">編輯</button><button class="action-link" data-issue-plan="'+esc(r.id)+'">領料</button></td></tr>'}).join('');
   return head('materials','工程用料規劃','預計材料需求、已領用數量與待領數量。','<button class="btn primary" data-create-plan>＋ 登記需求</button>')+
-    '<div class="banner">用料計畫不扣庫存；實際「工程領料」才扣庫存並計入該工程材料成本。</div><section class="panel">'+table(['工程案件','所需耗材','預計數量','已領用','待領用','庫存量','備料狀況','操作'],rows)+'</section>';
+    '<div class="banner">用料計畫不扣庫存；實際「工程領料」才扣庫存並計入該工程材料成本。備料狀態按全部未取消案件的共用庫存需求判斷，未指定工程領料優先順序。</div><section class="panel">'+table(['工程案件','所需耗材','預計數量','已領用','待領用','庫存量','備料狀況','操作'],rows)+'</section>';
  }
  async function apply(action,p){
   try{
@@ -37,7 +40,7 @@ const InventoryUI=(()=>{
      if(action==='itemAdd')list().push({...p,stock:0});
      else{const old=item(p.id);if(old.unit!==p.unit&&moves().some(m=>m.itemId===p.id))throw Error('已有出入庫的品項不可修改單位');Object.assign(old,p)}
     }else if(action==='requirementAdd'||action==='requirementUpdate'){
-     if(!(n(p.plannedQty)>0))throw Error('預計用量必須大於零');
+     if(!(n(p.plannedQty)>0)||!quantity3(Number(p.plannedQty)))throw Error('預計用量必須大於零，最多小數三位');
      if(action==='requirementAdd'){
       if(plans().some(r=>r.projectId===p.projectId&&r.itemId===p.itemId))throw Error('同一工程耗材已設定需求');
       plans().push(p);
@@ -46,7 +49,7 @@ const InventoryUI=(()=>{
      if(moves().some(m=>m.id===p.id))throw Error('重複的異動編號');
      if(!current)throw Error('找不到耗材');
      let amount=Number(p.qty);
-     if(!Number.isFinite(amount)||!amount||!Number.isInteger(amount*1000)||action!=='adjust'&&amount<0)throw Error('數量格式不合法');
+     if(!Number.isFinite(amount)||!amount||!quantity3(amount)||action!=='adjust'&&amount<0)throw Error('數量格式不合法');
      if(action==='issue'){
       if(!state.data.projects.some(project=>project.id===p.projectId&&project.status!=='已取消'))throw Error('工程不存在或已取消');
       amount=-amount;

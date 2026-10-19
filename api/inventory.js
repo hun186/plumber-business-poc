@@ -14,7 +14,7 @@ module.exports=async(req,res)=>{
   processInventory(req.body?.action,req.body?.payload,connection());
   return res.status(200).json({data:snapshot()});
  }catch(e){
-  const conflict=String(e.code||'').startsWith('SQLITE_CONSTRAINT_UNIQUE')||String(e.code||'').includes('PRIMARYKEY');
+  const conflict=String(e.code||'').startsWith('SQLITE_CONSTRAINT_UNIQUE')||String(e.code||'').includes('PRIMARYKEY')||[1555,2067].includes(Number(e.errcode))||/UNIQUE constraint failed|PRIMARY KEY constraint failed/i.test(String(e.message||''));
   console.error('Inventory operation failed',e.code||e.name);
   return res.status(conflict?409:e.status||400).json({error:conflict?'料號、需求或異動編號重複':e.status?e.message:'庫存資料格式或關聯錯誤'});
  }

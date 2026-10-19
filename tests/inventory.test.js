@@ -42,3 +42,5 @@ test('dates, duplicate project needs and canceled jobs are protected',()=>{
  db.prepare('UPDATE projects SET status=? WHERE id=?').run('已取消','p-wh');
  assert.throws(()=>processInventory('issue',{id:'m-bad002',itemId:'i-wh001',projectId:'p-wh',date:'2026-10-19',qty:1},db),/已取消/);
 });
+
+test('unit of a planned material cannot change after requirement creation',()=>{assert.throws(()=>processInventory('itemUpdate',{id:'i-wh001',sku:'PIPE-001',name:'水管',unit:'包',unitCost:95,alertQty:5,note:''},db),/計量單位/)});

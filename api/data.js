@@ -66,7 +66,18 @@ function mutate(action,payload){const type=String(payload?.id||'')[0],cfg=config
  conn.exec('BEGIN IMMEDIATE');
  try{
   if(action==='add')conn.prepare(`INSERT INTO ${cfg.table} (id,${cols.join(',')}) VALUES (?,${cols.map(()=>'?').join(',')})`).run(payload.id,...vals);
-  else {const result=conn.prepare(`UPDATE ${cfg.table} SET ${cols.map(c=>c+'=?').join(',')} WHERE id=?`).run(...vals,payload.id);if(!result.changes)invalid('找不到要編輯的資料')}
+  else {
+   const previous=cfg.table==='quotes'?conn.prepare('SELECT project_id AS projectId,status,items FROM quotes WHERE id=?').get(payload.id):null;
+   const result=conn.prepare(`UPDATE ${cfg.table} SET ${cols.map(c=>c+'=?').join(',')} WHERE id=?`).run(...vals,payload.id);
+   if(!result.changes)invalid('找不到要編輯的資料');
+   if(previous&&((Object.hasOwn(payload,'projectId')&&previous.projectId!==payload.projectId)||
+     (Object.hasOwn(payload,'status')&&previous.status!==payload.status)||
+     (Object.hasOwn(payload,'items')&&previous.items!==JSON.stringify(payload.items)))){
+    // Any change to accepted quote scope or material recipe invalidates the old cached plan.
+    // Demand is re-created only through explicit syncQuote, avoiding stale quantities.
+    conn.prepare('DELETE FROM quote_material_plans WHERE quote_id=?').run(payload.id);
+   }
+  }
   const data=snapshot(conn);conn.exec('COMMIT');return data;
  }catch(err){conn.exec('ROLLBACK');throw err}
 }

@@ -72,3 +72,28 @@ test('sidebar navigation has toggle groups and independently scrollable area',()
  assert.match(html,/data-page="catalog"/);
  assert.match(css,/\.sidebar nav\{display:block;flex:1 1 auto;min-height:0;overflow-y:auto/);
 });
+
+test('synchronized quote cannot silently reinterpret material units',()=>{
+ // Quote-backed PIPE is not present in manual material_requirements; it must still lock its unit.
+ const {processInventory}=require('../lib/inventory');
+ const target={id:'i-cat-pipe',sku:'PIPE',name:'配管',unit:'箱',unitCost:25,alertQty:3,note:''};
+ assert.throws(()=>processInventory('itemUpdate',target,db),/計量單位/);
+});
+test('switching a synchronized quote between projects clears old scoped demand',()=>{
+ db.prepare('INSERT INTO projects(id,customer_id,title,status) VALUES(?,?,?,?)').run('p-cat2','c-cat','第二個辦公室','施工中');
+ const original=snapshot(db).quotes.find(q=>q.id==='q-cat');
+ mutate('update',{...original,projectId:'p-cat2',items:original.items});
+ assert.equal(snapshot(db).quoteMaterialPlans.length,0);
+ upsertCatalog('syncQuote',{quoteId:'q-cat'},db);
+ assert.ok(snapshot(db).quoteMaterialPlans.every(r=>r.projectId==='p-cat2'));
+ assert.ok(!snapshot(db).materialRequirements.some(r=>r.projectId==='p-cat'&&r.source==='quote'));
+});
+test('a thirteenth hierarchy level is rejected when saving',()=>{
+ let parent='w-office';
+ for(let level=2;level<=12;level++){
+  const id='w-depth-'+level;
+  upsertCatalog('add',pkg(id,'第 '+level+' 層',parent),db);
+  parent=id;
+ }
+ assert.throws(()=>upsertCatalog('add',item('w-depth-13','超過限制',parent),db),/12 層/);
+});

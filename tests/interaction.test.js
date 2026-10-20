@@ -204,7 +204,7 @@ test('Escape first dismisses floating quote preview without discarding unsaved q
  catalog.quotePicker(()=>{});
  triggerEvents.mouseenter();
  assert.equal(floating.hidden,false);
- assert.equal(catalog.dismissPreviewOnEscape instanceof Function,true);
+ assert.equal(typeof catalog.dismissPreviewOnEscape,'function');
  let documentKey;
  const keyHandler=appScript.match(/document\.addEventListener\('keydown',e=>\{[^\n]*\}\);start\(\);/);
  assert.ok(keyHandler,'Global Escape handler should be available');

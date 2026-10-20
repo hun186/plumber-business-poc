@@ -106,6 +106,14 @@ const CatalogUI=(()=>{
   if(activeTrigger)activeTrigger.setAttribute('aria-expanded','false');
   activeTrigger=null;pinned=false;
  }
+ function dismissPreviewOnEscape(){
+  const root=$('#modal-root');
+  if(!floating||floating.hidden||!root?.contains(floating))return false;
+  const returnFocus=activeTrigger;
+  hidePreview();
+  returnFocus?.focus?.();
+  return true;
+ }
  function scheduleHide(){
   if(pinned)return;
   if(closingTimer!==null)clearTimeout(closingTimer);
@@ -138,7 +146,6 @@ const CatalogUI=(()=>{
     if(button)openTemplateEditor(button.dataset.previewEditTemplate);
     if(event.target.closest('[data-dismiss-preview]'))hidePreview();
    });
-   floating.addEventListener('keydown',event=>{if(event.key==='Escape')hidePreview()});
   }
   if(activeTrigger&&activeTrigger!==trigger)activeTrigger.setAttribute('aria-expanded','false');
   activeTrigger=trigger;trigger.setAttribute('aria-expanded','true');
@@ -221,5 +228,5 @@ const CatalogUI=(()=>{
   $$('[data-child-template]').forEach(b=>b.onclick=()=>edit(null,b.dataset.childTemplate));
   $$('[data-sync-quote]').forEach(b=>b.onclick=()=>syncQuote(b.dataset.syncQuote));
  }
- return {renderCatalog,edit,options,quotePicker,syncQuote,bind,selectedPreviewHTML,quoteLinePreviewHTML,bindQuoteLinePreview};
+ return {renderCatalog,edit,options,quotePicker,syncQuote,bind,selectedPreviewHTML,quoteLinePreviewHTML,bindQuoteLinePreview,dismissPreviewOnEscape};
 })();

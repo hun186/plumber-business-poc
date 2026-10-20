@@ -179,3 +179,55 @@ test('manual quote line addition is guarded by the same row limit',()=>{
  assert.match(appScript,/if\(\$\$\('#items-table tbody tr'\)\.length>=100\)return toast/);
  assert.match(appScript,/if\(rows\.length>100\)return toast/);
 });
+
+test('Escape first dismisses floating quote preview without discarding unsaved quote, second closes modal',()=>{
+ const selected={id:'w-plan',kind:'task',name:'電力配線',unit:'式',defaultQty:1,unitPrice:200,materials:[]};
+ const triggerEvents={};let floating,focusCount=0,modalCloses=0,prevented=0,stopped=0;
+ const trigger={setAttribute(k,v){this[k]=v},focus(){focusCount++},
+  getBoundingClientRect(){return {left:100,top:110,bottom:145}},
+  addEventListener(kind,handler){triggerEvents[kind]=handler},
+  matches(){return false}};
+ const node=()=>({hidden:true,offsetHeight:180,style:{},
+  setAttribute(){},addEventListener(){},contains(){return false},matches(){return false}});
+ const root={contains:el=>el===floating,appendChild:el=>{floating=el}};
+ const picker={value:'w-plan',addEventListener(){}},button={};
+ const catalog=vm.runInNewContext(pickerScript+'\nCatalogUI;',{
+  state:{data:{workTemplates:[selected],inventoryItems:[]}},
+  CatalogKit:kit,
+  document:{createElement:node,activeElement:null},
+  window:{innerWidth:960,innerHeight:640},
+  $:q=>({'#quote-template-add':button,'#quote-template':picker,
+   '#quote-template-inspect':trigger,'#modal-root':root})[q]||null,
+  $$:()=>[],esc:x=>String(x??''),money:x=>String(x),toast(){},
+  setTimeout(){},clearTimeout(){}
+ });
+ catalog.quotePicker(()=>{});
+ triggerEvents.mouseenter();
+ assert.equal(floating.hidden,false);
+ assert.equal(catalog.dismissPreviewOnEscape instanceof Function,true);
+ let documentKey;
+ const keyHandler=appScript.match(/document\.addEventListener\('keydown',e=>\{[^;\n]*\}\);start\(\);/);
+ assert.ok(keyHandler,'Global Escape handler should be available');
+ vm.runInNewContext(keyHandler[0].replace(/;start\(\);$/, ';'),{
+  document:{addEventListener(type,fn){if(type==='keydown')documentKey=fn}},
+  CatalogUI:catalog,closeModal(){modalCloses++}
+ });
+ const event=()=>({key:'Escape',preventDefault(){prevented++},stopPropagation(){stopped++}});
+ documentKey(event());
+ assert.equal(floating.hidden,true,'Only the preview must be dismissed');
+ assert.equal(modalCloses,0,'Unsaved quote modal must stay open');
+ assert.equal(prevented,1);
+ assert.equal(stopped,1);
+ assert.equal(focusCount,1);
+ assert.equal(trigger['aria-expanded'],'false');
+ documentKey(event());
+ assert.equal(modalCloses,1,'Second Escape closes quote modal normally');
+});
+
+test('Escape from a stale detached preview must not intercept the quote editor',()=>{
+ const ui=vm.runInNewContext(pickerScript+'\nCatalogUI;',{
+  state:{data:{workTemplates:[],inventoryItems:[]}},CatalogKit:kit,
+  $:()=>({contains(){return false}}),$$:()=>[],toast(){}
+ });
+ assert.equal(ui.dismissPreviewOnEscape(),false);
+});

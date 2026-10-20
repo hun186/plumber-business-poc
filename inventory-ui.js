@@ -22,7 +22,7 @@ const InventoryUI=(()=>{
   const coverage=BusinessReports.materialCoverage(state.data);
   const rows=plans().map(r=>{const i=item(r.itemId),used=issued(r.projectId,r.itemId),left=coverage.remaining.get(r.id)||0,shared=coverage.byItem.get(r.itemId),cancelled=state.data.projects.some(p=>p.id===r.projectId&&p.status==='已取消');
    const readiness=cancelled?'<span class="stock-warning">案件已取消</span>':shared?.shortfall>0?'<span class="stock-warning">整體備料不足（共缺 '+fmt(shared.shortfall)+' '+esc(i.unit)+'）</span>':'<span class="stock-ok">可備料</span>';
-   return '<tr><td>'+esc(project(r.projectId).title)+'</td><td>'+esc(i.name)+'</td><td>'+fmt(r.plannedQty)+' '+esc(i.unit)+'</td><td>'+fmt(used)+'</td><td>'+fmt(left)+'</td><td>'+fmt(i.stock)+'</td><td>'+readiness+'</td><td><button class="action-link" data-edit-plan="'+esc(r.id)+'">編輯</button><button class="action-link" data-issue-plan="'+esc(r.id)+'">領料</button></td></tr>'}).join('');
+   return '<tr><td>'+esc(project(r.projectId).title)+'</td><td>'+esc(i.name)+'</td><td>'+fmt(r.plannedQty)+' '+esc(i.unit)+'</td><td>'+fmt(used)+'</td><td>'+fmt(left)+'</td><td>'+fmt(i.stock)+'</td><td>'+readiness+'</td><td>'+(r.source==='quote'?'<span class="sub">估價單備料</span><button class="action-link" data-manual-plan="'+esc(r.id)+'">改為手動</button>':'<button class="action-link" data-edit-plan="'+esc(r.id)+'">編輯</button>')+'<button class="action-link" data-issue-plan="'+esc(r.id)+'">領料</button></td></tr>'}).join('');
   return head('materials','工程用料規劃','預計材料需求、已領用數量與待領數量。','<button class="btn primary" data-create-plan>＋ 登記需求</button>')+
     '<div class="banner">用料計畫不扣庫存；實際「工程領料」才扣庫存並計入該工程材料成本。備料狀態按全部未取消案件的共用庫存需求判斷，未指定工程領料優先順序。</div><section class="panel">'+table(['工程案件','所需耗材','預計數量','已領用','待領用','庫存量','備料狀況','操作'],rows)+'</section>';
  }
@@ -38,12 +38,16 @@ const InventoryUI=(()=>{
      if(!p.name||!p.sku||!p.unit||n(p.unitCost)<0||n(p.alertQty)<0)throw Error('料件欄位不完整');
      if(list().some(i=>i.id!==p.id&&i.sku===p.sku))throw Error('料號不可重複');
      if(action==='itemAdd')list().push({...p,stock:0});
-     else{const old=item(p.id);if(old.unit!==p.unit&&(moves().some(m=>m.itemId===p.id)||plans().some(r=>r.itemId===p.id)))throw Error('已有出入庫的品項不可修改單位');Object.assign(old,p)}
+     else{const old=item(p.id);if(old.unit!==p.unit&&(moves().some(m=>m.itemId===p.id)||plans().some(r=>r.itemId===p.id)||
+       (d.quoteMaterialPlans||[]).some(r=>r.itemId===p.id)||
+       (d.workTemplates||[]).some(t=>(t.materials||[]).some(m=>m.itemId===p.id))||
+       (d.quotes||[]).some(q=>(q.items||[]).some(line=>(line.materials||[]).some(m=>m.itemId===p.id)))))throw Error('耗材已被庫存或工項／估價材料配方引用，不可修改計量單位');Object.assign(old,p)}
     }else if(action==='requirementAdd'||action==='requirementUpdate'){
      if(!(n(p.plannedQty)>0)||!quantity3(Number(p.plannedQty)))throw Error('預計用量必須大於零，最多小數三位');
      if(action==='requirementAdd'){
-      if(plans().some(r=>r.projectId===p.projectId&&r.itemId===p.itemId))throw Error('同一工程耗材已設定需求');
-      plans().push(p);
+      if(plans().some(r=>r.projectId===p.projectId&&r.itemId===p.itemId&&r.source!=='quote'))throw Error('同一工程耗材已有手動需求');
+      d.materialRequirements=d.materialRequirements.filter(r=>!(r.source==='quote'&&r.projectId===p.projectId&&r.itemId===p.itemId));
+      d.materialRequirements.push(p);
      }else Object.assign(plans().find(r=>r.id===p.id),p);
     }else{
      if(moves().some(m=>m.id===p.id))throw Error('重複的異動編號');
@@ -83,11 +87,11 @@ const InventoryUI=(()=>{
  }
  function planForm(existing){
   if(!state.data.projects.length||!list().length)return toast('請先新增工程案件與耗材');
-  const p=existing||{};
+  const p=existing||{},isQuote=p.source==='quote';
   const chooser=existing?'<p>工程：'+esc(project(p.projectId).title)+' ／ '+esc(item(p.itemId).name)+'</p>':
     select('工程','projectId',state.data.projects.filter(p=>p.status!=='已取消').map(p=>[p.id,p.title]),p.projectId)+select('耗材','itemId',list().map(i=>[i.id,i.name]),p.itemId);
-  openModal(existing?'編輯用料需求':'新增工程用料','<div class="form-grid">'+chooser+field('預計用量','plannedQty',p.plannedQty||1,'number')+note(p.note)+'</div>',
-    f=>{const v=Object.fromEntries(f.entries());apply(existing?'requirementUpdate':'requirementAdd',{...v,id:p.id||uid('b'),plannedQty:Number(v.plannedQty)})});
+  openModal(isQuote?'改為手動備料需求':existing?'編輯用料需求':'新增工程用料','<div class="form-grid">'+chooser+field('預計用量','plannedQty',p.plannedQty||1,'number')+note(p.note)+'</div>',
+    f=>{const v=Object.fromEntries(f.entries());apply(existing&&!isQuote?'requirementUpdate':'requirementAdd',{...v,...(isQuote?{projectId:p.projectId,itemId:p.itemId}:{}),id:isQuote?uid('b'):p.id||uid('b'),plannedQty:Number(v.plannedQty)})});
  }
  function bind(){
   const newItem=$('[data-create-item]');if(newItem)newItem.onclick=()=>itemForm();
@@ -95,6 +99,7 @@ const InventoryUI=(()=>{
   $$('[data-move-item]').forEach(b=>b.onclick=()=>moveForm(b.dataset.moveItem));
   const newPlan=$('[data-create-plan]');if(newPlan)newPlan.onclick=()=>planForm();
   $$('[data-edit-plan]').forEach(b=>b.onclick=()=>planForm(plans().find(p=>p.id===b.dataset.editPlan)));
+  $$('[data-manual-plan]').forEach(b=>b.onclick=()=>planForm(plans().find(p=>p.id===b.dataset.manualPlan)));
   $$('[data-issue-plan]').forEach(b=>b.onclick=()=>{const p=plans().find(r=>r.id===b.dataset.issuePlan);moveForm(p.itemId,'issue',p.projectId,Math.max(0.001,n(p.plannedQty)-issued(p.projectId,p.itemId)))});
  }
  return {renderInventory,renderRequirements,alerts,bind};

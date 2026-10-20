@@ -4,8 +4,8 @@ const http=require('node:http');
 const fs=require('node:fs');
 const path=require('node:path');
 const base=__dirname;
-const endpoints={'/api/status':require('./api/status'),'/api/login':require('./api/login'),'/api/data':require('./api/data'),'/api/inventory':require('./api/inventory')};
-const files={'/':'index.html','/index.html':'index.html','/styles.css':'styles.css','/app.js':'app.js','/inventory-ui.js':'inventory-ui.js','/reports.js':'reports.js','/xlsx-lite.js':'xlsx-lite.js'};
+const endpoints={'/api/status':require('./api/status'),'/api/login':require('./api/login'),'/api/data':require('./api/data'),'/api/inventory':require('./api/inventory'),'/api/catalog':require('./api/catalog')};
+const files={'/':'index.html','/index.html':'index.html','/styles.css':'styles.css','/app.js':'app.js','/inventory-ui.js':'inventory-ui.js','/catalog-ui.js':'catalog-ui.js','/catalog-kit.js':'catalog-kit.js','/reports.js':'reports.js','/xlsx-lite.js':'xlsx-lite.js'};
 const types={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8'};
 function response(res){return {status(code){res.statusCode=code;return this},setHeader:(...args)=>res.setHeader(...args),json(obj){res.setHeader('Content-Type','application/json; charset=utf-8');res.end(JSON.stringify(obj))}}}
 const handler=http.createServer(async(req,res)=>{

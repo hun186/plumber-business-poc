@@ -183,7 +183,7 @@ test('manual quote line addition is guarded by the same row limit',()=>{
 test('Escape first dismisses floating quote preview without discarding unsaved quote, second closes modal',()=>{
  const selected={id:'w-plan',kind:'task',name:'電力配線',unit:'式',defaultQty:1,unitPrice:200,materials:[]};
  const triggerEvents={};let floating,focusCount=0,modalCloses=0,prevented=0,stopped=0;
- const trigger={setAttribute(k,v){this[k]=v},focus(){focusCount++},
+ const trigger={setAttribute(k,v){this[k]=v},focus(){focusCount++;triggerEvents.focus?.()},
   getBoundingClientRect(){return {left:100,top:110,bottom:145}},
   addEventListener(kind,handler){triggerEvents[kind]=handler},
   matches(){return false}};
@@ -214,14 +214,18 @@ test('Escape first dismisses floating quote preview without discarding unsaved q
  });
  const event=()=>({key:'Escape',preventDefault(){prevented++},stopPropagation(){stopped++}});
  documentKey(event());
- assert.equal(floating.hidden,true,'Only the preview must be dismissed');
+ assert.equal(floating.hidden,true,'Only the preview must be dismissed, even when focus() synchronously fires focus listeners');
  assert.equal(modalCloses,0,'Unsaved quote modal must stay open');
  assert.equal(prevented,1);
  assert.equal(stopped,1);
  assert.equal(focusCount,1);
  assert.equal(trigger['aria-expanded'],'false');
+ triggerEvents.focus();
+ assert.equal(floating.hidden,false,'Explicit later focus should still open the preview');
  documentKey(event());
- assert.equal(modalCloses,1,'Second Escape closes quote modal normally');
+ assert.equal(floating.hidden,true,'Second preview dismissal should also stay dismissed');
+ documentKey(event());
+ assert.equal(modalCloses,1,'Escape closes the quote only after its preview is hidden');
 });
 
 test('Escape from a stale detached preview must not intercept the quote editor',()=>{

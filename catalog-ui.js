@@ -99,7 +99,7 @@ const CatalogUI=(()=>{
    (recipe?'<ul class="quote-preview-recipe">'+recipe+'</ul>':'<p>這個工項沒有設定材料。</p>')+
    '<div class="quote-preview-footer"><button type="button" class="btn small" data-preview-edit-template="'+esc(meta.catalogId)+'">編輯原始工項範本</button><span>範本變更不會更新本次估價快照。</span></div>';
  }
- let floating=null,activeTrigger=null,closingTimer=null,pinned=false;
+ let floating=null,activeTrigger=null,closingTimer=null,pinned=false,restoringFocus=false;
  function hidePreview(){
   if(closingTimer!==null){clearTimeout(closingTimer);closingTimer=null}
   if(floating)floating.hidden=true;
@@ -111,7 +111,8 @@ const CatalogUI=(()=>{
   if(!floating||floating.hidden||!root?.contains(floating))return false;
   const returnFocus=activeTrigger;
   hidePreview();
-  returnFocus?.focus?.();
+  restoringFocus=true;
+  try{returnFocus?.focus?.()}finally{restoringFocus=false}
   return true;
  }
  function scheduleHide(){
@@ -129,6 +130,7 @@ const CatalogUI=(()=>{
   hidePreview();closeModal();nav('catalog');edit(entry);
  }
  function showFloating(trigger,content){
+  if(restoringFocus)return;
   const root=$('#modal-root');
   if(!root||!trigger)return;
   if(!floating||!root.contains(floating)){

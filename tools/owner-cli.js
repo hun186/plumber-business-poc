@@ -141,6 +141,57 @@ function assertDatabasePresent(conf,allowFirstInstall=false){
   fail('E_DB','尚有舊 SQLite WAL/SHM 資料，拒絕建立空白資料庫；請聯絡交付者');
  return false;
 }
+// Read-only structural verification must happen before lib/sqlite.connection()
+// executes any CREATE TABLE IF NOT EXISTS migrations. Never heal broken business data.
+function verifyEstablishedSchema(conf,allowFirstInstall=false){
+ const existing=assertDatabasePresent(conf,allowFirstInstall);
+ if(!existing)return false;
+ let reader;
+ try{
+  const {DatabaseSync}=require('node:sqlite');
+  reader=new DatabaseSync(conf.databasePath,{readOnly:true});
+  const integrity=reader.prepare('PRAGMA quick_check').all();
+  if(integrity.length!==1||Object.values(integrity[0])[0]!=='ok')fail('E_DB','原始 SQLite 資料完整性檢查未通過，已停止升級');
+  const tables=new Set(reader.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(r=>r.name));
+  const baseTables=['customers','projects','quotes','payments','costs'];
+  for(const table of baseTables)if(!tables.has(table))
+   fail('E_DB','既有資料庫缺少核心資料表 '+table+'，可能有資料遺失；拒絕自動補建空表');
+  // v0.2 -> v0.3 -> v0.4: additive upgrades are allowed only from
+  // complete known prior schemas; half-installed components are rejected.
+  const inventory=['inventory_items','inventory_movements','material_requirements'];
+  const catalog=['work_templates','quote_material_plans'];
+  for(const [label,group] of [['v0.3 倉儲',inventory],['v0.4 工項',catalog]]){
+   const count=group.filter(name=>tables.has(name)).length;
+   if(count!==0&&count!==group.length)
+    fail('E_DB',label+' 的資料表不完整，拒絕建立可能覆蓋原有資料的空表');
+  }
+  if(catalog.some(t=>tables.has(t))&&!inventory.every(t=>tables.has(t)))
+   fail('E_DB','工項資料存在但倉儲基礎資料遺失，已停止升級');
+  const required={
+   customers:['id','name'],projects:['id','customer_id','title','amount'],
+   quotes:['id','number','project_id','customer_id','items'],
+   payments:['id','project_id','paid_date','amount'],
+   costs:['id','project_id','cost_date','category','amount'],
+   inventory_items:['id','sku','name','unit','unit_cost'],
+   inventory_movements:['id','item_id','kind','qty','unit_cost'],
+   material_requirements:['id','project_id','item_id','planned_qty'],
+   work_templates:['id','name','kind','default_qty','unit_price','materials'],
+   quote_material_plans:['project_id','item_id','quote_id','planned_qty']
+  };
+  for(const [table,columns] of Object.entries(required)){
+   if(!tables.has(table))continue;
+   const actual=new Set(reader.prepare('PRAGMA table_info("'+table+'")').all().map(c=>c.name));
+   for(const col of columns)if(!actual.has(col))
+    fail('E_DB','既有資料表 '+table+' 缺少必要欄位 '+col+'；不能自動升級');
+  }
+  const fk=reader.prepare('PRAGMA foreign_key_check').all();
+  if(fk.length)fail('E_DB','既有資料庫外鍵關聯檢查失敗（'+fk.length+' 項）');
+  return true;
+ }catch(error){
+  if(error.ownerCode)throw error;
+  fail('E_DB','既有 SQLite 資料表檢查失敗（'+(error.code||error.name||'未知')+'），已停止升級');
+ }finally{if(reader)reader.close()}
+}
 function database(){
  try{
   const db=require('../lib/sqlite').connection();
@@ -163,7 +214,7 @@ function prerequisite(allowCreate){
  restrictWindowsAcl(envFile);
  try{secureDatabaseStorage(conf)}
  catch(e){if(e.ownerCode)throw e;fail('E_PATH','無法讀寫資料庫目錄（'+(e.code||'權限問題')+'）')}
- assertDatabasePresent(conf,Boolean(generated));
+ verifyEstablishedSchema(conf,Boolean(generated));
  database();
  return {...conf,generated};
 }
@@ -223,4 +274,4 @@ async function execute(command=process.argv[2]){
  });
 }
 if(require.main===module)execute().catch(e=>{errorReport(e);process.exitCode=1});
-module.exports={versionOk,parseSettings,validateSettings,createFirstTimeConfig,restrictWindowsAcl,secureDatabaseStorage,assertDatabasePresent,prerequisite,stamp,help};
+module.exports={versionOk,parseSettings,validateSettings,createFirstTimeConfig,restrictWindowsAcl,secureDatabaseStorage,assertDatabasePresent,verifyEstablishedSchema,prerequisite,stamp,help};

@@ -92,9 +92,16 @@ function secureDatabaseStorage(conf){
  const ownDir=path.join(projectRoot,'data');
  if(path.dirname(conf.databasePath)!==ownDir)fail('E_PATH','資料庫必須存放在專用 data 目錄');
  fs.mkdirSync(ownDir,{recursive:true,mode:0o700});
+ const ownStat=fs.lstatSync(ownDir);
+ if(!ownStat.isDirectory()||ownStat.isSymbolicLink())fail('E_PATH','data 資料夾不可為符號連結或 Windows junction');
  fs.accessSync(ownDir,fs.constants.R_OK|fs.constants.W_OK);
+ // Reject all linked SQLite files before any ACL mutation can follow the link.
+ for(const file of [conf.databasePath,conf.databasePath+'-wal',conf.databasePath+'-shm']){
+  let stat;
+  try{stat=fs.lstatSync(file)}catch(error){if(error.code==='ENOENT')continue;throw error}
+  if(!stat.isFile()||stat.isSymbolicLink())fail('E_PATH','資料庫或 WAL/SHM 不是安全的實體檔案，拒絕存取：'+path.basename(file));
+ }
  restrictWindowsAcl(ownDir);
- // Only application SQLite files are touched. Never traverse a parent folder.
  for(const file of [conf.databasePath,conf.databasePath+'-wal',conf.databasePath+'-shm'])
   if(fs.existsSync(file))restrictWindowsAcl(file);
 }
@@ -129,10 +136,11 @@ function validatedConfig(){
 // Only the same process which just created the first .env may bootstrap a new DB.
 function assertDatabasePresent(conf,allowFirstInstall=false){
  let info=null;
- try{info=fs.statSync(conf.databasePath)}catch(error){
+ try{info=fs.lstatSync(conf.databasePath)}catch(error){
   if(error.code!=='ENOENT')fail('E_DB','無法檢查既有資料庫：'+(error.code||'存取失敗'));
  }
  if(info){
+  if(info.isSymbolicLink())fail('E_PATH','SQLite 資料庫是符號連結，為避免存取專案外資料已停止');
   if(!info.isFile()||info.size===0)fail('E_DB','資料庫不是有效的資料檔，或檔案已經是 0 位元組；已停止以避免資料遺失');
   return true;
  }
@@ -225,21 +233,12 @@ function stamp(d=new Date()){
  return local.toISOString().replace(/[-:]/g,'').replace('T','-').slice(0,15);
 }
 function backup(){
- const db=database(),dir=path.join(projectRoot,'backups');
- try{fs.mkdirSync(dir,{recursive:true,mode:0o700});restrictWindowsAcl(dir);for(const n of fs.readdirSync(dir)){if(/^plumber-backup-.*\.sqlite$/i.test(n))restrictWindowsAcl(path.join(dir,n))}}catch(e){if(e.ownerCode)throw e;fail('E_BACKUP','無法建立或保護 backups 資料夾')}
- const target=path.join(dir,'plumber-backup-'+stamp()+'-'+crypto.randomBytes(3).toString('hex')+'.sqlite');
- try{
-  db.exec("VACUUM INTO '"+target.replace(/'/g,"''")+"'");
-  restrictWindowsAcl(target);
-  const {DatabaseSync}=require('node:sqlite');
-  const check=new DatabaseSync(target,{readOnly:true});
-  try{if(check.prepare('PRAGMA quick_check').get().quick_check!=='ok')throw Error('備份驗證失敗')}
-  finally{check.close()}
-  console.log('[完成] 已建立一致性 SQLite 備份：'+target);
-  console.log('[驗證] SQLite quick_check 正常；大小 '+(fs.statSync(target).size/1048576).toFixed(2)+' MB');
-  console.log('請另複製一份到受保護的外接硬碟或加密備份位置。');
- }catch(e){try{if(fs.existsSync(target))fs.unlinkSync(target)}catch{}
-  fail('E_BACKUP','SQLite VACUUM INTO 或備份驗證失敗（'+(e.code||e.message)+'）')}
+ // Reuse the exact same physical-path checks and verified snapshot engine
+ // as the web interface; never traverse Windows junctions or symlinks.
+ const entry=require('../lib/backup-manager').makeBackup('manual');
+ console.log('[完成] 已建立一致性 SQLite 備份：'+path.join(projectRoot,'backups',entry.name));
+ console.log('[驗證] SQLite quick_check 與主要業務資料表筆數正常；大小 '+(entry.size/1048576).toFixed(2)+' MB');
+ console.log('請另複製一份到受保護的外接硬碟或加密備份位置。');
 }
 function launch(url){
  if(process.env.OWNER_NO_BROWSER==='1')return;

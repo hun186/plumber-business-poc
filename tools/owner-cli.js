@@ -59,18 +59,18 @@ $ErrorActionPreference = 'Stop'
 $target = $env:OWNER_ACL_PATH
 $sid = $env:OWNER_ACL_SID
 $allowed = @($sid, 'S-1-5-18', 'S-1-5-32-544')
-$acl = Get-Acl -LiteralPath $target
+$isFolder = [System.IO.Directory]::Exists($target)
+$acl = if ($isFolder) { [System.IO.Directory]::GetAccessControl($target) } else { [System.IO.File]::GetAccessControl($target) }
 $acl.SetAccessRuleProtection($true, $false)
 foreach ($entry in @($acl.Access)) { [void]$acl.RemoveAccessRuleSpecific($entry) }
-$isFolder = (Get-Item -LiteralPath $target).PSIsContainer
 $inherit = if ($isFolder) { [System.Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit' } else { [System.Security.AccessControl.InheritanceFlags]::None }
 foreach ($who in $allowed) {
   $identity = [System.Security.Principal.SecurityIdentifier]::new($who)
   $rule = [System.Security.AccessControl.FileSystemAccessRule]::new($identity, [System.Security.AccessControl.FileSystemRights]::FullControl, $inherit, [System.Security.AccessControl.PropagationFlags]::None, [System.Security.AccessControl.AccessControlType]::Allow)
   [void]$acl.AddAccessRule($rule)
 }
-Set-Acl -LiteralPath $target -AclObject $acl
-$confirmed = Get-Acl -LiteralPath $target
+if ($isFolder) { [System.IO.Directory]::SetAccessControl($target,$acl) } else { [System.IO.File]::SetAccessControl($target,$acl) }
+$confirmed = if ($isFolder) { [System.IO.Directory]::GetAccessControl($target) } else { [System.IO.File]::GetAccessControl($target) }
 if (-not $confirmed.AreAccessRulesProtected) { throw 'NTFS inheritance remains enabled' }
 foreach ($entry in $confirmed.Access) {
   $principal = $entry.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value

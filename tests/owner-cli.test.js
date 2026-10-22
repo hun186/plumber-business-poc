@@ -39,11 +39,19 @@ test('a clean owner folder passes diagnostics and creates a verified VACUUM back
   assert.match(backup.stdout,/已建立一致性 SQLite 備份/);
   const copies=fs.readdirSync(path.join(root,'backups')).filter(x=>x.endsWith('.sqlite'));
   assert.equal(copies.length,1);
+  if(process.platform==='win32'){
+   const {execFileSync}=require('node:child_process');
+   for(const secretFile of [path.join(root,'.env'),path.join(root,'backups',copies[0])]){
+    const acl=execFileSync('icacls.exe',[secretFile],{encoding:'utf8'});
+    assert.match(acl,/\(F\)/,'Windows owner-only secret/database ACL must grant full control');
+    assert.doesNotMatch(acl,/\(I\)/,'Secret file should not inherit broad parent-directory permissions');
+   }
+  }
   const {DatabaseSync}=require('node:sqlite'),saved=new DatabaseSync(path.join(root,'backups',copies[0]),{readOnly:true});
   try{assert.equal(saved.prepare('PRAGMA quick_check').get().quick_check,'ok');
    assert.ok(saved.prepare("SELECT name FROM sqlite_master WHERE name='work_templates'").get())}
   finally{saved.close()}
- }finally{fs.rmSync(root,{recursive:true,force:true})}
+ }finally{fs.rmSync(root,{recursive:true,force:true,maxRetries:14,retryDelay:200})}
 });
 
 test('direct npm start shares strong owner config rules and Windows secrets require explicit ACL',()=>{
@@ -87,5 +95,5 @@ test('initial generated login password is shown even if SQLite initialization su
   assert.match(run.stderr,/\[錯誤 E_DB\]/);
   assert.ok(fs.existsSync(path.join(root,'.env')));
   assert.match(fs.readFileSync(path.join(root,'.env'),'utf8'),/^AUTH_SECRET=/m);
- }finally{fs.rmSync(root,{recursive:true,force:true})}
+ }finally{fs.rmSync(root,{recursive:true,force:true,maxRetries:14,retryDelay:200})}
 });

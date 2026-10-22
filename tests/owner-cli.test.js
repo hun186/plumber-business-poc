@@ -27,7 +27,7 @@ test('a clean owner folder passes diagnostics and creates a verified VACUUM back
  try{
   for(const folder of ['tools','lib','db'])fs.mkdirSync(path.join(root,folder));
   const copy=file=>fs.copyFileSync(path.join(__dirname,'..',file),path.join(root,file));
-  for(const file of ['tools/owner-cli.js','lib/sqlite.js','db/schema.sqlite.sql','db/inventory.sql','db/catalog.sql'])copy(file);
+  for(const file of ['tools/owner-cli.js','lib/sqlite.js','db/schema.sqlite.sql','db/inventory.sql','db/catalog.sql','db/backup.sql'])copy(file);
   const env={...process.env,OWNER_NO_BROWSER:'1',OWNER_ACL_DEBUG:'1'};delete env.VERCEL;
   const call=cmd=>spawnSync(process.execPath,['tools/owner-cli.js',cmd],{cwd:root,env,encoding:'utf8',timeout:15000});
   const setup=spawnSync(process.execPath,['-e',"require('./tools/owner-cli.js').prerequisite(true)"],{cwd:root,env,encoding:'utf8',timeout:15000});
@@ -128,7 +128,7 @@ test('disappeared business database never gets silently recreated by check, back
  try{
   for(const folder of ['tools','lib','db','api'])fs.mkdirSync(path.join(root,folder));
   const copy=f=>fs.copyFileSync(path.join(__dirname,'..',f),path.join(root,f));
-  for(const file of ['tools/owner-cli.js','lib/sqlite.js','db/schema.sqlite.sql','db/inventory.sql','db/catalog.sql','server.js','api/_auth.js'])copy(file);
+  for(const file of ['tools/owner-cli.js','lib/sqlite.js','db/schema.sqlite.sql','db/inventory.sql','db/catalog.sql','db/backup.sql','server.js','api/_auth.js'])copy(file);
   for(const api of ['status','login','data','inventory','catalog'])
    fs.writeFileSync(path.join(root,'api',api+'.js'),'module.exports=()=>{};');
   const env={...process.env,OWNER_NO_BROWSER:'1'};for(const key of ['VERCEL','SQLITE_PATH','APP_ADMIN_PASSWORD','AUTH_SECRET','PORT'])delete env[key];
@@ -178,7 +178,7 @@ test('existing SQLite with missing core table is rejected before migration can r
  try{
   for(const folder of ['tools','lib','db','api'])fs.mkdirSync(path.join(root,folder));
   const copy=f=>fs.copyFileSync(path.join(__dirname,'..',f),path.join(root,f));
-  for(const file of ['tools/owner-cli.js','lib/sqlite.js','db/schema.sqlite.sql','db/inventory.sql','db/catalog.sql','server.js','api/_auth.js'])copy(file);
+  for(const file of ['tools/owner-cli.js','lib/sqlite.js','db/schema.sqlite.sql','db/inventory.sql','db/catalog.sql','db/backup.sql','server.js','api/_auth.js'])copy(file);
   for(const api of ['status','login','data','inventory','catalog'])
    fs.writeFileSync(path.join(root,'api',api+'.js'),'module.exports=()=>{};');
   const env={...process.env,OWNER_NO_BROWSER:'1'};for(const k of ['VERCEL','SQLITE_PATH','APP_ADMIN_PASSWORD','AUTH_SECRET','PORT'])delete env[k];
@@ -226,7 +226,7 @@ test('valid v0.2 core-only SQLite preserves business data across additive v0.3 a
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'owner-legacy-v2-'));
  try{
   for(const folder of ['tools','lib','db'])fs.mkdirSync(path.join(root,folder));
-  for(const file of ['tools/owner-cli.js','lib/sqlite.js','db/schema.sqlite.sql','db/inventory.sql','db/catalog.sql'])
+  for(const file of ['tools/owner-cli.js','lib/sqlite.js','db/schema.sqlite.sql','db/inventory.sql','db/catalog.sql','db/backup.sql'])
    fs.copyFileSync(path.join(__dirname,'..',file),path.join(root,file));
   fs.writeFileSync(path.join(root,'.env'),'SQLITE_PATH=./data/plumber.sqlite\nAPP_ADMIN_PASSWORD=strong-test-password-owner-only\nAUTH_SECRET='+'x'.repeat(50)+'\n');
   fs.mkdirSync(path.join(root,'data'));

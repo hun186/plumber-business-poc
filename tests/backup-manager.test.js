@@ -290,3 +290,47 @@ test('managed backup files have Windows explicit broad access removed before lis
   assert.equal(result.clean,true);
  }finally{fs.rmSync(root,{recursive:true,force:true,maxRetries:15,retryDelay:200})}
 });
+
+test('backup validates the completed snapshot despite a committed write before VACUUM',()=>{
+ const root=fixture();
+ try{
+  const result=call(root,`
+   require('./tools/owner-cli').prerequisite(true);
+   const db=require('./lib/sqlite').connection(),backups=require('./lib/backup-manager');
+   const original=db.exec.bind(db);
+   let changed=false;
+   db.exec=function(sql,...args){
+    if(!changed&&String(sql).startsWith('VACUUM INTO ')){
+     changed=true;
+     db.prepare("INSERT INTO customers(id,name) VALUES('late-write','備份期間新增')").run();
+    }
+    return original(sql,...args);
+   };
+   const item=backups.makeBackup('manual',new Date('2026-10-22T18:00:00Z'),db);
+   const {DatabaseSync}=require('node:sqlite'),path=require('node:path');
+   const output=new DatabaseSync(path.join('backups',item.name),{readOnly:true});
+   const found=output.prepare("SELECT name FROM customers WHERE id='late-write'").get();
+   output.close();
+   console.log(JSON.stringify({changed,found:found?.name,count:backups.items().length}));
+  `);
+  assert.equal(result.changed,true);
+  assert.equal(result.found,'備份期間新增');
+  assert.equal(result.count,1);
+ }finally{fs.rmSync(root,{recursive:true,force:true,maxRetries:15,retryDelay:200})}
+});
+test('backup Worker refuses changed .env SQLite path instead of opening another database',()=>{
+ const root=fixture();
+ try{
+  const result=call(root,`
+   require('./tools/owner-cli').prerequisite(true);
+   const fs=require('node:fs');
+   const before=fs.readFileSync('.env','utf8');
+   fs.writeFileSync('.env',before.replace('SQLITE_PATH=./data/plumber.sqlite','SQLITE_PATH=./data/unrelated.sqlite'));
+   require('./lib/backup-manager').makeBackupAsync('manual')
+    .then(()=>console.log(JSON.stringify({unexpected:true})))
+    .catch(e=>console.log(JSON.stringify({code:e.code,hasOther:fs.existsSync('data/unrelated.sqlite')})));
+  `);
+  assert.equal(result.code,'E_CONFIG');
+  assert.equal(result.hasOther,false);
+ }finally{fs.rmSync(root,{recursive:true,force:true,maxRetries:15,retryDelay:200})}
+});

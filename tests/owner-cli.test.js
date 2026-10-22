@@ -234,6 +234,7 @@ test('valid v0.2 core-only SQLite preserves business data across additive v0.3 a
   db.exec(fs.readFileSync(path.join(root,'db','schema.sqlite.sql'),'utf8'));
   db.prepare("INSERT INTO customers(id,name) VALUES('legacy-c','舊版客戶保留')").run();db.close();
   const env={...process.env,OWNER_NO_BROWSER:'1'};for(const k of ['VERCEL','SQLITE_PATH','APP_ADMIN_PASSWORD','AUTH_SECRET','PORT'])delete env[k];
+  env.OWNER_ALLOW_LEGACY_UPGRADE='1';
   const result=spawnSync(process.execPath,['tools/owner-cli.js','check'],{cwd:root,env,encoding:'utf8',timeout:15000});
   assert.equal(result.status,0,result.stderr||result.stdout);
   const migrated=new DatabaseSync(filepath,{readOnly:true});
@@ -251,7 +252,7 @@ test('missing runtime-required SQLite customer phone column is rejected before a
   const file=path.join(root,'before.sqlite');
   const {DatabaseSync}=require('node:sqlite'),db=new DatabaseSync(file);
   db.exec(fs.readFileSync(path.join(__dirname,'../db/schema.sqlite.sql'),'utf8'));
-  db.exec('ALTER TABLE customers DROP COLUMN phone');db.close();
+  db.exec('ALTER TABLE customers DROP COLUMN phone; PRAGMA user_version=2');db.close();
   assert.throws(()=>owner.verifyEstablishedSchema({databasePath:file}),/customers.*phone/);
   const unchanged=new DatabaseSync(file,{readOnly:true});
   try{
@@ -293,5 +294,60 @@ test('linked existing .env cannot be read or have external Windows ACL changed',
   assert.notEqual(attempt.status,0);
   assert.match(attempt.stderr,/E_PATH|符號連結|實體檔案/);
   assert.equal(fs.readFileSync(external,'utf8').includes('AUTH_SECRET='),true);
+ }finally{fs.rmSync(root,{recursive:true,force:true,maxRetries:14,retryDelay:200})}
+});
+
+test('marked production SQLite rejects complete loss of its catalog schema',()=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'owner-installed-schema-'));
+ try{
+  for(const dir of ['tools','lib','db'])fs.mkdirSync(path.join(root,dir));
+  for(const file of ['tools/owner-cli.js','lib/sqlite.js','lib/backup-manager.js','lib/backup-worker.js','db/schema.sqlite.sql','db/inventory.sql','db/catalog.sql','db/backup.sql'])
+   fs.copyFileSync(path.join(__dirname,'..',file),path.join(root,file));
+  const env={...process.env,OWNER_NO_BROWSER:'1'};
+  for(const name of ['VERCEL','SQLITE_PATH','APP_ADMIN_PASSWORD','AUTH_SECRET','PORT','OWNER_ALLOW_LEGACY_UPGRADE'])delete env[name];
+  const run=cmd=>spawnSync(process.execPath,cmd,{cwd:root,env,encoding:'utf8',timeout:15000});
+  assert.equal(run(['-e',"require('./tools/owner-cli').prerequisite(true)"]).status,0);
+  const {DatabaseSync}=require('node:sqlite'),dbpath=path.join(root,'data','plumber.sqlite'),db=new DatabaseSync(dbpath);
+  assert.equal(db.prepare('PRAGMA user_version').get().user_version,5);
+  db.exec('DROP TABLE quote_material_plans; DROP TABLE work_templates;');db.close();
+  const result=run(['tools/owner-cli.js','check']);
+  assert.notEqual(result.status,0);
+  assert.match(result.stderr,/\[錯誤 E_DB\]/);
+  const restored=new DatabaseSync(dbpath,{readOnly:true});
+  try{assert.equal(restored.prepare("SELECT count(*) n FROM sqlite_master WHERE name='work_templates'").get().n,0)}
+  finally{restored.close()}
+ }finally{fs.rmSync(root,{recursive:true,force:true,maxRetries:14,retryDelay:200})}
+});
+test('unmarked v0.2 missing additive groups requires explicit one-time authorization',()=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'owner-legacy-guard-'));
+ const previous=process.env.OWNER_ALLOW_LEGACY_UPGRADE;
+ try{
+  const file=path.join(root,'v2.sqlite'),{DatabaseSync}=require('node:sqlite'),db=new DatabaseSync(file);
+  db.exec(fs.readFileSync(path.join(__dirname,'../db/schema.sqlite.sql'),'utf8'));db.close();
+  delete process.env.OWNER_ALLOW_LEGACY_UPGRADE;
+  assert.throws(()=>owner.verifyEstablishedSchema({databasePath:file}),/未標記版本/);
+  process.env.OWNER_ALLOW_LEGACY_UPGRADE='1';
+  assert.equal(owner.verifyEstablishedSchema({databasePath:file}),true);
+ }finally{
+  if(previous===undefined)delete process.env.OWNER_ALLOW_LEGACY_UPGRADE;
+  else process.env.OWNER_ALLOW_LEGACY_UPGRADE=previous;
+  fs.rmSync(root,{recursive:true,force:true,maxRetries:14,retryDelay:200});
+ }
+});
+test('canonical unique, foreign-key, CHECK constraints remain enforced before migrations',()=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'owner-constraint-guard-'));
+ try{
+  const schema=fs.readFileSync(path.join(__dirname,'../db/schema.sqlite.sql'),'utf8');
+  const cases=[
+   ['quote-unique',schema.replace('number TEXT NOT NULL UNIQUE','number TEXT NOT NULL')],
+   ['project-foreign-key',schema.replace('customer_id TEXT NOT NULL REFERENCES customers(id)','customer_id TEXT NOT NULL')],
+   ['positive-amount-check',schema.replace('amount REAL NOT NULL CHECK(amount>0)','amount REAL NOT NULL')]
+  ];
+  for(const [label,sql] of cases){
+   assert.notEqual(sql,schema);
+   const file=path.join(root,label+'.sqlite'),{DatabaseSync}=require('node:sqlite'),db=new DatabaseSync(file);
+   db.exec(sql+'; PRAGMA user_version=2');db.close();
+   assert.throws(()=>owner.verifyEstablishedSchema({databasePath:file}),/約束|不符合正式結構/,label);
+  }
  }finally{fs.rmSync(root,{recursive:true,force:true,maxRetries:14,retryDelay:200})}
 });

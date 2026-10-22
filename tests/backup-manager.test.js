@@ -19,7 +19,7 @@ function call(root,script){
 test('daily default, persisted settings, auto retention and manual backup history',()=>{
  const root=fixture();
  try{
-  const result=call(root,\`
+  const result=call(root,`
    const fs=require('node:fs'),path=require('node:path');
    require('./tools/owner-cli').prerequisite(true);
    const db=require('./lib/sqlite').connection(),b=require('./lib/backup-manager');
@@ -35,7 +35,7 @@ test('daily default, persisted settings, auto retention and manual backup histor
    const x=new DatabaseSync(path.join(process.cwd(),'backups',third.name),{readOnly:true});
    const found=x.prepare("SELECT name FROM customers WHERE id='proof'").get();x.close();
    console.log(JSON.stringify({defaults,manual,first,skipped,found,items:b.items(),settings:b.settings(db)}));
-  \`);
+  `);
   assert.equal(result.defaults.intervalDays,1);
   assert.equal(result.defaults.retentionCount,50);
   assert.ok(result.manual.name.endsWith('-manual.sqlite'));
@@ -52,7 +52,7 @@ test('daily default, persisted settings, auto retention and manual backup histor
 test('invalid settings and unsafe paths cannot destroy manually created backups',()=>{
  const root=fixture();
  try{
-  const x=call(root,\`
+  const x=call(root,`
    const fs=require('node:fs'),path=require('node:path');
    require('./tools/owner-cli').prerequisite(true);
    const b=require('./lib/backup-manager'),db=require('./lib/sqlite').connection();
@@ -65,7 +65,7 @@ test('invalid settings and unsafe paths cannot destroy manually created backups'
    fs.writeFileSync(path.join(process.cwd(),'backups','ordinary-business-report.txt'),'never delete me');
    b.saveSettings({intervalDays:1,retentionCount:1},db);
    console.log(JSON.stringify({errors,remaining:b.items().map(x=>x.name),text:fs.readFileSync(path.join(process.cwd(),'backups','ordinary-business-report.txt'),'utf8'),first:first.name}));
-  \`);
+  `);
   assert.equal(x.errors.length,7);
   assert.ok(x.errors.every(y=>['E_CONFIG','E_BACKUP'].includes(y)));
   assert.deepEqual(x.remaining,[x.first]);
@@ -75,7 +75,7 @@ test('invalid settings and unsafe paths cannot destroy manually created backups'
 test('backup API is authenticated, origin-checked and supports listing, configuration and deletion',()=>{
  const root=fixture();
  try{
-  const x=call(root,\`
+  const x=call(root,`
    const api=require('./api/backups'),auth=require('./api/_auth');
    require('./tools/owner-cli').prerequisite(true);
    const b=require('./lib/backup-manager'),file=b.makeBackup('manual');
@@ -92,7 +92,7 @@ test('backup API is authenticated, origin-checked and supports listing, configur
    const saved=response('POST','http://127.0.0.1:3000',true,{action:'save',intervalDays:7,retentionCount:10});
    const removed=response('POST','http://127.0.0.1:3000',true,{action:'delete',name:file.name});
    console.log(JSON.stringify({anonymous:anonymous.code,foreign:foreign.code,status:status.code,defaults:status.obj.intervalDays,saved:saved.obj.intervalDays,remaining:removed.obj.backups.length}));
-  \`);
+  `);
   assert.deepEqual(x,{anonymous:401,foreign:403,status:200,defaults:1,saved:7,remaining:0});
  }finally{fs.rmSync(root,{recursive:true,force:true,maxRetries:15,retryDelay:200})}
 });

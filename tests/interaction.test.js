@@ -22,6 +22,7 @@ test('first visit paints overview before a pending status API call settles',()=>
   fetch:()=>new Promise(()=>{}), // deliberately never resolves
   CatalogUI:{renderCatalog:()=>'',bind(){}},
   InventoryUI:{renderInventory:()=>'',renderRequirements:()=>'',alerts:()=>[],bind(){}},
+  BackupUI:{render:()=>'',bind(){}},
   BusinessReports:{}
  };
  vm.runInNewContext(appScript,sandbox,{filename:'app.js'});

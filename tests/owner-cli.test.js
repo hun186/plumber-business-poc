@@ -88,7 +88,7 @@ test('direct startup rejects the publicly known example credentials before creat
  try{
   for(const folder of ['api','tools'])fs.mkdirSync(path.join(root,folder));
   for(const f of ['server.js','tools/owner-cli.js','api/_auth.js'])fs.copyFileSync(path.join(__dirname,'..',f),path.join(root,f));
-  for(const f of ['status','login','data','inventory','catalog'])
+  for(const f of ['status','login','data','inventory','catalog','backups'])
    fs.writeFileSync(path.join(root,'api',f+'.js'),'module.exports=(req,res)=>res.status(503).json({error:"stub"});\n');
   fs.copyFileSync(path.join(__dirname,'..','.env.example'),path.join(root,'.env'));
   const env={...process.env};for(const k of ['SQLITE_PATH','APP_ADMIN_PASSWORD','AUTH_SECRET','VERCEL'])delete env[k];
@@ -129,7 +129,7 @@ test('disappeared business database never gets silently recreated by check, back
   for(const folder of ['tools','lib','db','api'])fs.mkdirSync(path.join(root,folder));
   const copy=f=>fs.copyFileSync(path.join(__dirname,'..',f),path.join(root,f));
   for(const file of ['tools/owner-cli.js','lib/sqlite.js','db/schema.sqlite.sql','db/inventory.sql','db/catalog.sql','db/backup.sql','server.js','api/_auth.js'])copy(file);
-  for(const api of ['status','login','data','inventory','catalog'])
+  for(const api of ['status','login','data','inventory','catalog','backups'])
    fs.writeFileSync(path.join(root,'api',api+'.js'),'module.exports=()=>{};');
   const env={...process.env,OWNER_NO_BROWSER:'1'};for(const key of ['VERCEL','SQLITE_PATH','APP_ADMIN_PASSWORD','AUTH_SECRET','PORT'])delete env[key];
   const launch=(args)=>spawnSync(process.execPath,args,{cwd:root,env,encoding:'utf8',timeout:15000});
@@ -179,7 +179,7 @@ test('existing SQLite with missing core table is rejected before migration can r
   for(const folder of ['tools','lib','db','api'])fs.mkdirSync(path.join(root,folder));
   const copy=f=>fs.copyFileSync(path.join(__dirname,'..',f),path.join(root,f));
   for(const file of ['tools/owner-cli.js','lib/sqlite.js','db/schema.sqlite.sql','db/inventory.sql','db/catalog.sql','db/backup.sql','server.js','api/_auth.js'])copy(file);
-  for(const api of ['status','login','data','inventory','catalog'])
+  for(const api of ['status','login','data','inventory','catalog','backups'])
    fs.writeFileSync(path.join(root,'api',api+'.js'),'module.exports=()=>{};');
   const env={...process.env,OWNER_NO_BROWSER:'1'};for(const k of ['VERCEL','SQLITE_PATH','APP_ADMIN_PASSWORD','AUTH_SECRET','PORT'])delete env[k];
   const launch=args=>spawnSync(process.execPath,args,{cwd:root,env,encoding:'utf8',timeout:15000});

@@ -7,7 +7,7 @@ function fail(res,e){
  console.error('[backup-api]',e.code||'UNKNOWN');
  return res.status(status).json({code:e.code||'E_BACKUP',error:e.code==='E_BACKUP_BUSY'?e.message:e.code==='E_CONFIG'?e.message:'無法完成備份操作，請記下錯誤代碼並執行部署檢查'});
 }
-module.exports=(req,res)=>{
+module.exports=async(req,res)=>{
  res.setHeader('Cache-Control','no-store');
  if(!enabled())return res.status(503).json({code:'E_CONFIG',error:'備份僅適用正式 SQLite 模式，示範網站不會保存真實備份'});
  if(!authenticated(req))return res.status(401).json({code:'E_LOGIN',error:'請先登入資料庫模式'});
@@ -29,7 +29,7 @@ module.exports=(req,res)=>{
   }
   const {action,intervalDays,retentionCount,name}=req.body||{};
   if(action==='save')return res.status(200).json(backups.saveSettings({intervalDays,retentionCount}));
-  if(action==='create'){backups.makeBackup('manual');return res.status(200).json(backups.status())}
+  if(action==='create'){await backups.makeBackupAsync('manual');return res.status(200).json(backups.status())}
   if(action==='delete'){backups.deleteBackup(name);return res.status(200).json(backups.status())}
   return res.status(400).json({code:'E_CONFIG',error:'不支援的備份管理操作'});
  }catch(e){return fail(res,e)}

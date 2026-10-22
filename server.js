@@ -29,7 +29,19 @@ const handler=http.createServer(async(req,res)=>{
 if(require.main===module){
  // 直接 npm start 時也必須明確檢查，避免沒有持久資料庫卻落入 Demo 模式。
  const {enabled}=require('./api/_auth');
- if(!enabled()){
+ let validated=false;
+ try{
+  const owner=require('./tools/owner-cli');
+  const values=owner.parseSettings(fs.readFileSync(path.join(base,'.env'),'utf8'));
+  owner.validateSettings(values);
+  for(const key of ['SQLITE_PATH','APP_ADMIN_PASSWORD','AUTH_SECRET']){
+   if(process.env[key]!==values[key])throw Error('目前環境與 .env 的 '+key+' 不一致');
+  }
+  validated=true;
+ }catch(err){
+  console.error('[E_CONFIG] 正式 SQLite 設定驗證失敗（'+(err.ownerCode||err.message)+'）；不可使用範例密碼、過短密鑰或網路共享資料庫。');
+ }
+ if(!enabled()||!validated){
   console.error('[E_CONFIG] 缺少有效 SQLite_PATH、APP_ADMIN_PASSWORD 或 AUTH_SECRET，不能啟動正式服務。');
   console.error('請先執行「啟動水電好管家.bat」或 node tools/owner-cli.js start 完成設定。');
   process.exitCode=1;

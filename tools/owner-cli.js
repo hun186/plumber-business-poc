@@ -1,7 +1,7 @@
 'use strict';
 /* Windows owner hand-off: native Node only; no installer dependency. */
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
-const {spawn}=require('node:child_process');
+const {spawn,execFileSync}=require('node:child_process');
 const projectRoot=path.resolve(__dirname,'..');
 process.chdir(projectRoot);
 const envFile=path.join(projectRoot,'.env');
@@ -42,14 +42,36 @@ function validateSettings(values){
  if(!Number.isInteger(port)||port<1024||port>65535)fail('E_CONFIG','PORT 必須是 1024～65535');
  return {port,databasePath:path.resolve(projectRoot,values.SQLITE_PATH)};
 }
+// Windows NTFS ignores POSIX mode bits. Explicitly restrict secrets and data to
+// the current Windows SID, SYSTEM and Administrators. Fail closed on ACL errors.
+function restrictWindowsAcl(target,recursive=false){
+ if(process.platform!=='win32')return;
+ try{
+  const who=execFileSync('whoami.exe',['/user','/fo','csv','/nh'],{encoding:'utf8',windowsHide:true});
+  const sid=who.match(/S-1-\d+(?:-\d+)+/)?.[0];
+  if(!sid)fail('E_PATH','無法讀取 Windows 使用者安全識別碼');
+  const args=[target,'/inheritance:r','/grant:r','*'+sid+':(F)','*S-1-5-18:(F)','*S-1-5-32-544:(F)'];
+  if(recursive)args.push('/T');
+  execFileSync('icacls.exe',args,{encoding:'utf8',windowsHide:true,timeout:30000});
+ }catch(e){if(e.ownerCode)throw e;fail('E_PATH','設定 Windows 私密檔案存取權限失敗（'+(e.code||e.name)+'）')}
+}
+function printNewPassword(pw){
+ console.log('\n***** 首次建立管理密碼（只在建立時顯示）*****');
+ console.log(pw);
+ console.log('請現在抄下密碼妥善保管；勿把畫面或 .env 傳給其他人。');
+ console.log('忘記密碼：授權管理員可在 .env 查看 APP_ADMIN_PASSWORD。');
+ console.log('*******************************************\n');
+}
 function createFirstTimeConfig(){
  if(fs.existsSync(envFile))return null;
  const password=crypto.randomBytes(24).toString('base64url');
  const secret=crypto.randomBytes(48).toString('base64url');
  const text='# 首次啟動自動建立。此檔含管理密碼，不可外傳或提交 GitHub。\n'+
   'SQLITE_PATH=./data/plumber.sqlite\nAPP_ADMIN_PASSWORD='+password+'\nAUTH_SECRET='+secret+'\n';
- try{fs.writeFileSync(envFile,text,{mode:0o600,flag:'wx',encoding:'utf8'})}
- catch(e){if(e.code==='EEXIST')return null;fail('E_PATH','無法建立 .env（'+(e.code||'寫入失敗')+'）')}
+ try{
+  fs.writeFileSync(envFile,text,{mode:0o600,flag:'wx',encoding:'utf8'});
+  try{restrictWindowsAcl(envFile)}catch(e){try{fs.unlinkSync(envFile)}catch{}throw e}
+ }catch(e){if(e.code==='EEXIST')return null;if(e.ownerCode)throw e;fail('E_PATH','無法建立 .env（'+(e.code||'寫入失敗')+'）')}
  return password;
 }
 function validatedConfig(){
@@ -76,9 +98,13 @@ function prerequisite(allowCreate){
  if(!versionOk())fail('E_NODE','偵測到 Node.js '+process.version+'，最低版本為 v22.13');
  if(process.env.VERCEL)fail('E_VERCEL');
  const generated=allowCreate?createFirstTimeConfig():null;
+ // Display the first-time password before any fallible database I/O.
+ if(generated)printNewPassword(generated);
  const conf=validatedConfig();
+ restrictWindowsAcl(envFile);
  try{fs.mkdirSync(path.dirname(conf.databasePath),{recursive:true,mode:0o700});
-  fs.accessSync(path.dirname(conf.databasePath),fs.constants.R_OK|fs.constants.W_OK)}
+  fs.accessSync(path.dirname(conf.databasePath),fs.constants.R_OK|fs.constants.W_OK);
+  restrictWindowsAcl(path.dirname(conf.databasePath),true)}
  catch(e){fail('E_PATH','無法讀寫資料庫目錄（'+(e.code||'權限問題')+'）')}
  database();
  return {...conf,generated};
@@ -89,10 +115,11 @@ function stamp(d=new Date()){
 }
 function backup(){
  const db=database(),dir=path.join(projectRoot,'backups');
- try{fs.mkdirSync(dir,{recursive:true,mode:0o700})}catch(e){fail('E_BACKUP','無法建立 backups 資料夾')}
+ try{fs.mkdirSync(dir,{recursive:true,mode:0o700});restrictWindowsAcl(dir,true)}catch(e){if(e.ownerCode)throw e;fail('E_BACKUP','無法建立或保護 backups 資料夾')}
  const target=path.join(dir,'plumber-backup-'+stamp()+'-'+crypto.randomBytes(3).toString('hex')+'.sqlite');
  try{
   db.exec("VACUUM INTO '"+target.replace(/'/g,"''")+"'");
+  restrictWindowsAcl(target);
   const {DatabaseSync}=require('node:sqlite');
   const check=new DatabaseSync(target,{readOnly:true});
   try{if(check.prepare('PRAGMA quick_check').get().quick_check!=='ok')throw Error('備份驗證失敗')}
@@ -126,13 +153,6 @@ async function execute(command=process.argv[2]){
  console.log('[通過] Node.js '+process.version);
  console.log('[通過] SQLite 已初始化，資料完整性檢查正常');
  console.log('[資料庫] '+config.databasePath);
- if(config.generated){
-  console.log('\n***** 首次建立管理密碼（只在建立時顯示）*****');
-  console.log(config.generated);
-  console.log('請現在抄下密碼妥善保管；勿把畫面或 .env 傳給其他人。');
-  console.log('忘記密碼：授權管理員可在 .env 查看 APP_ADMIN_PASSWORD。');
-  console.log('*******************************************\n');
- }
  if(command==='check'){console.log('[通過] 部署檢查完成；可雙擊「啟動水電好管家.bat」。');return}
  if(command==='backup'){backup();return}
  const server=require('../server'),url='http://127.0.0.1:'+config.port;

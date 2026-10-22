@@ -45,3 +45,16 @@ test('a clean owner folder passes diagnostics and creates a verified VACUUM back
   finally{saved.close()}
  }finally{fs.rmSync(root,{recursive:true,force:true})}
 });
+
+test('direct npm start shares strong owner config rules and Windows secrets require explicit ACL',()=>{
+ const fs=require('node:fs'),path=require('node:path');
+ const server=fs.readFileSync(path.join(__dirname,'../server.js'),'utf8');
+ const source=fs.readFileSync(path.join(__dirname,'../tools/owner-cli.js'),'utf8');
+ assert.match(server,/owner\.validateSettings\(values\)/);
+ assert.match(server,/process\.env\[key\]!==values\[key\]/);
+ assert.match(source,/execFileSync\('icacls\.exe'/);
+ assert.match(source,/execFileSync\('whoami\.exe'/);
+ assert.match(source,/restrictWindowsAcl\(envFile\)/);
+ assert.match(source,/restrictWindowsAcl\(path\.dirname\(conf\.databasePath\),true\)/);
+ assert.ok(source.indexOf('if(generated)printNewPassword(generated)')<source.indexOf('const conf=validatedConfig()'));
+});

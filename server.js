@@ -4,10 +4,10 @@ const http=require('node:http');
 const fs=require('node:fs');
 const path=require('node:path');
 const base=__dirname;
-const endpoints={'/api/status':require('./api/status'),'/api/login':require('./api/login'),'/api/data':require('./api/data'),'/api/inventory':require('./api/inventory'),'/api/catalog':require('./api/catalog')};
-const files={'/':'index.html','/index.html':'index.html','/styles.css':'styles.css','/app.js':'app.js','/inventory-ui.js':'inventory-ui.js','/catalog-ui.js':'catalog-ui.js','/catalog-kit.js':'catalog-kit.js','/reports.js':'reports.js','/xlsx-lite.js':'xlsx-lite.js'};
+const endpoints={'/api/status':require('./api/status'),'/api/login':require('./api/login'),'/api/data':require('./api/data'),'/api/inventory':require('./api/inventory'),'/api/catalog':require('./api/catalog'),'/api/backups':require('./api/backups')};
+const files={'/':'index.html','/index.html':'index.html','/styles.css':'styles.css','/app.js':'app.js','/inventory-ui.js':'inventory-ui.js','/catalog-ui.js':'catalog-ui.js','/backup-ui.js':'backup-ui.js','/catalog-kit.js':'catalog-kit.js','/reports.js':'reports.js','/xlsx-lite.js':'xlsx-lite.js'};
 const types={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8'};
-function response(res){return {status(code){res.statusCode=code;return this},setHeader:(...args)=>res.setHeader(...args),json(obj){res.setHeader('Content-Type','application/json; charset=utf-8');res.end(JSON.stringify(obj))}}}
+function response(res){return {raw:res,status(code){res.statusCode=code;return this},setHeader:(...args)=>res.setHeader(...args),json(obj){res.setHeader('Content-Type','application/json; charset=utf-8');res.end(JSON.stringify(obj))}}}
 const handler=http.createServer(async(req,res)=>{
  const url=new URL(req.url,'http://localhost');
  if(endpoints[url.pathname]){
@@ -60,7 +60,7 @@ if(require.main===module){
    }catch(err){console.error('[E_DB] SQLite 無法初始化或資料庫可能受損（'+(err.code||err.name)+'）。停止操作並聯絡交付人員。');process.exitCode=1}
    if(!process.exitCode){
     handler.on('error',err=>{console.error(err.code==='EADDRINUSE'?'[E_PORT] 服務埠被占用，請檢查是否已開啟另一份程式。':'[E_PATH] 啟動失敗：'+(err.code||err.name));process.exitCode=1});
-    handler.listen(port,'127.0.0.1',()=>console.log('水電好管家 SQLite 本機服務：http://127.0.0.1:'+port));
+    handler.listen(port,'127.0.0.1',()=>{console.log('水電好管家 SQLite 本機服務：http://127.0.0.1:'+port);require('./lib/backup-manager').startScheduler()});
    }
   }
  }

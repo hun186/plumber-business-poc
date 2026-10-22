@@ -1,6 +1,6 @@
 {
  "name":"plumber-business-poc", "version":"0.4.0", "private":true,
  "description":"水電工程業務管理 PoC：SQLite、成本毛利分析、Excel 多工作表匯出",
- "scripts":{"start":"node --env-file-if-exists=.env server.js","dev":"node --env-file-if-exists=.env server.js","check":"node --check app.js && node --check inventory-ui.js && node --check catalog-ui.js && node --check catalog-kit.js && node --check lib/catalog.js && node --check api/catalog.js && node --check lib/inventory.js && node --check api/inventory.js && node --check reports.js && node --check xlsx-lite.js && node --check server.js && node --check api/data.js && node --check api/_auth.js && node --check api/login.js && node --check api/status.js && node --test tests/*.test.js"},
+ "scripts":{"start":"node --env-file-if-exists=.env server.js","dev":"node --env-file-if-exists=.env server.js","check":"node --check app.js && node --check inventory-ui.js && node --check catalog-ui.js && node --check catalog-kit.js && node --check lib/catalog.js && node --check api/catalog.js && node --check lib/inventory.js && node --check api/inventory.js && node --check reports.js && node --check xlsx-lite.js && node --check server.js && node --check api/data.js && node --check api/_auth.js && node --check api/login.js && node --check api/status.js && node --check api/backups.js && node --check lib/backup-manager.js && node --check backup-ui.js && node --test tests/*.test.js"},
  "engines":{"node":">=22.13.0"}, "dependencies":{},"devDependencies":{}
 }

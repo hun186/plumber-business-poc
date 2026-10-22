@@ -273,6 +273,7 @@ async function execute(command=process.argv[2]){
   console.log('請保持這個視窗開啟；關閉視窗網站會停止。Ctrl+C 可停止。');
   console.log('此網址只能在本機使用；遠端或多人使用須另行部署 HTTPS。');
   launch(url);
+  require('../lib/backup-manager').startScheduler();
  });
 }
 if(require.main===module)execute().catch(e=>{errorReport(e);process.exitCode=1});

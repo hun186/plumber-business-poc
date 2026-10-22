@@ -33,7 +33,9 @@ if(require.main===module){
  try{
   const owner=require('./tools/owner-cli');
   const values=owner.parseSettings(fs.readFileSync(path.join(base,'.env'),'utf8'));
-  owner.validateSettings(values);
+  const cfg=owner.validateSettings(values);
+  owner.restrictWindowsAcl(path.join(base,'.env'));
+  owner.secureDatabaseStorage(cfg);
   for(const key of ['SQLITE_PATH','APP_ADMIN_PASSWORD','AUTH_SECRET']){
    if(process.env[key]!==values[key])throw Error('目前環境與 .env 的 '+key+' 不一致');
   }

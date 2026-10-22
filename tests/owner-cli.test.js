@@ -60,10 +60,13 @@ test('direct npm start shares strong owner config rules and Windows secrets requ
  const source=fs.readFileSync(path.join(__dirname,'../tools/owner-cli.js'),'utf8');
  assert.match(server,/owner\.validateSettings\(values\)/);
  assert.match(server,/process\.env\[key\]!==values\[key\]/);
- assert.match(source,/execFileSync\('icacls\.exe'/);
+ assert.match(source,/execFileSync\('powershell\.exe'/);
+ assert.match(source,/SetAccessRuleProtection/);
+ assert.match(source,/RemoveAccessRuleSpecific/);
+ assert.doesNotMatch(source,/icacls\.exe.*\/T/);
  assert.match(source,/execFileSync\('whoami\.exe'/);
  assert.match(source,/restrictWindowsAcl\(envFile\)/);
- assert.match(source,/restrictWindowsAcl\(path\.dirname\(conf\.databasePath\),true\)/);
+ assert.match(source,/secureDatabaseStorage\(conf\)/);
  assert.ok(source.indexOf('if(generated)printNewPassword(generated)')<source.indexOf('const conf=validatedConfig()'));
 });
 
@@ -96,4 +99,13 @@ test('initial generated login password is shown even if SQLite initialization su
   assert.ok(fs.existsSync(path.join(root,'.env')));
   assert.match(fs.readFileSync(path.join(root,'.env'),'utf8'),/^AUTH_SECRET=/m);
  }finally{fs.rmSync(root,{recursive:true,force:true,maxRetries:14,retryDelay:200})}
+});
+
+test('owner config prevents recursive ACL changes outside the dedicated data folder',()=>{
+ const config={SQLITE_PATH:'./data/plumber.sqlite',APP_ADMIN_PASSWORD:'another-sufficiently-long-secret',AUTH_SECRET:'z'.repeat(64)};
+ assert.equal(owner.validateSettings(config).databasePath,path.join(__dirname,'..','data','plumber.sqlite'));
+ for(const danger of ['../other.sqlite','./data/../../outside.sqlite','//server/share/file.sqlite',
+  '\\\\server\\share\\file.sqlite','C:\\Users\\Public\\database.sqlite','./backups/backup.sqlite','./data/not-a-db.txt']){
+  assert.throws(()=>owner.validateSettings({...config,SQLITE_PATH:danger}),/資料庫|網路磁碟|路徑/);
+ }
 });

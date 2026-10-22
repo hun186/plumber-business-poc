@@ -36,26 +36,62 @@ function validateSettings(values){
  if(!values.APP_ADMIN_PASSWORD||values.APP_ADMIN_PASSWORD.length<12||values.APP_ADMIN_PASSWORD.startsWith('REPLACE_'))fail('E_CONFIG','管理密碼至少 12 字元，且不能使用範例字串');
  if(!values.AUTH_SECRET||values.AUTH_SECRET.length<32||values.AUTH_SECRET.startsWith('REPLACE_'))fail('E_CONFIG','AUTH_SECRET 至少 32 個隨機字元');
  for(const k of ['SQLITE_PATH','APP_ADMIN_PASSWORD','AUTH_SECRET'])if(/[\r\n]/.test(values[k]))fail('E_CONFIG','設定欄位不能包含換行');
- if(values.SQLITE_PATH.startsWith('\\\\'))fail('E_PATH','SQLite 不適合放在網路共享磁碟');
+ if(/^(?:\\|\/\/)/.test(values.SQLITE_PATH.replace(/\\/g,'/'))||path.isAbsolute(values.SQLITE_PATH)||path.win32.isAbsolute(values.SQLITE_PATH))fail('E_PATH','請勿使用網路磁碟或絕對路徑；資料庫只能位於本專案 data 資料夾');
+ const databasePath=path.resolve(projectRoot,values.SQLITE_PATH);
+ if(path.dirname(databasePath)!==path.join(projectRoot,'data')||!databasePath.toLowerCase().endsWith('.sqlite'))fail('E_PATH','資料庫只能使用 data 資料夾下的 .sqlite 檔案，避免誤改其他目錄權限');
  if(process.env.VERCEL)fail('E_VERCEL');
  const port=values.PORT?Number(values.PORT):3000;
  if(!Number.isInteger(port)||port<1024||port>65535)fail('E_CONFIG','PORT 必須是 1024～65535');
- return {port,databasePath:path.resolve(projectRoot,values.SQLITE_PATH)};
+ return {port,databasePath};
 }
 // Windows NTFS ignores POSIX mode bits. Explicitly restrict secrets and data to
 // the current Windows SID, SYSTEM and Administrators. Fail closed on ACL errors.
-function restrictWindowsAcl(target,recursive=false){
+function restrictWindowsAcl(target){
  if(process.platform!=='win32')return;
  try{
   const who=execFileSync('whoami.exe',['/user','/fo','csv','/nh'],{encoding:'utf8',windowsHide:true});
   const sid=who.match(/S-1-\d+(?:-\d+)+/)?.[0];
-  if(!sid)fail('E_PATH','無法讀取 Windows 使用者安全識別碼');
-  const access=recursive?':(OI)(CI)F':':(F)';
-  const args=[target,'/inheritance:r','/grant:r','*'+sid+access,
-   '/grant:r','*S-1-5-18'+access,'/grant:r','*S-1-5-32-544'+access];
-  if(recursive)args.push('/T');
-  execFileSync('icacls.exe',args,{encoding:'utf8',windowsHide:true,timeout:30000});
- }catch(e){if(e.ownerCode)throw e;fail('E_PATH','設定 Windows 私密檔案存取權限失敗（'+(e.code||e.name)+'）')}
+  if(!sid)fail('E_PATH','無法讀取 Windows 使用者 SID');
+  // Overwrite the entire DACL, not just inherited ACEs. Never recurse into
+  // arbitrary user directories, and verify no unapproved ACE survives.
+  const script=String.raw`
+$ErrorActionPreference = 'Stop'
+$target = $env:OWNER_ACL_PATH
+$sid = $env:OWNER_ACL_SID
+$allowed = @($sid, 'S-1-5-18', 'S-1-5-32-544')
+$acl = Get-Acl -LiteralPath $target
+$acl.SetAccessRuleProtection($true, $false)
+foreach ($entry in @($acl.Access)) { [void]$acl.RemoveAccessRuleSpecific($entry) }
+$isFolder = (Get-Item -LiteralPath $target).PSIsContainer
+$inherit = if ($isFolder) { [System.Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit' } else { [System.Security.AccessControl.InheritanceFlags]::None }
+foreach ($who in $allowed) {
+  $identity = New-Object System.Security.Principal.SecurityIdentifier($who)
+  $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($identity, [System.Security.AccessControl.FileSystemRights]::FullControl, $inherit, [System.Security.AccessControl.PropagationFlags]::None, [System.Security.AccessControl.AccessControlType]::Allow)
+  [void]$acl.AddAccessRule($rule)
+}
+Set-Acl -LiteralPath $target -AclObject $acl
+$confirmed = Get-Acl -LiteralPath $target
+if (-not $confirmed.AreAccessRulesProtected) { throw 'NTFS inheritance remains enabled' }
+foreach ($entry in $confirmed.Access) {
+  $principal = $entry.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value
+  if ($allowed -notcontains $principal -or $entry.AccessControlType -ne [System.Security.AccessControl.AccessControlType]::Allow) { throw 'Unexpected NTFS permission remains' }
+}
+`;
+  execFileSync('powershell.exe',['-NoProfile','-NonInteractive','-Command',script],{
+   env:{...process.env,OWNER_ACL_PATH:target,OWNER_ACL_SID:sid},
+   encoding:'utf8',windowsHide:true,timeout:30000,stdio:['ignore','pipe','pipe']
+  });
+ }catch(e){if(e.ownerCode)throw e;fail('E_PATH','Windows ACL 安全檢查未通過（'+(e.code||e.name)+'），為保護密碼及客戶資料，已停止操作')}
+}
+function secureDatabaseStorage(conf){
+ const ownDir=path.join(projectRoot,'data');
+ if(path.dirname(conf.databasePath)!==ownDir)fail('E_PATH','資料庫必須存放在專用 data 目錄');
+ fs.mkdirSync(ownDir,{recursive:true,mode:0o700});
+ fs.accessSync(ownDir,fs.constants.R_OK|fs.constants.W_OK);
+ restrictWindowsAcl(ownDir);
+ // Only application SQLite files are touched. Never traverse a parent folder.
+ for(const file of [conf.databasePath,conf.databasePath+'-wal',conf.databasePath+'-shm'])
+  if(fs.existsSync(file))restrictWindowsAcl(file);
 }
 function printNewPassword(pw){
  console.log('\n***** 首次建立管理密碼（只在建立時顯示）*****');
@@ -104,10 +140,8 @@ function prerequisite(allowCreate){
  if(generated)printNewPassword(generated);
  const conf=validatedConfig();
  restrictWindowsAcl(envFile);
- try{fs.mkdirSync(path.dirname(conf.databasePath),{recursive:true,mode:0o700});
-  fs.accessSync(path.dirname(conf.databasePath),fs.constants.R_OK|fs.constants.W_OK);
-  restrictWindowsAcl(path.dirname(conf.databasePath),true)}
- catch(e){fail('E_PATH','無法讀寫資料庫目錄（'+(e.code||'權限問題')+'）')}
+ try{secureDatabaseStorage(conf)}
+ catch(e){if(e.ownerCode)throw e;fail('E_PATH','無法讀寫資料庫目錄（'+(e.code||'權限問題')+'）')}
  database();
  return {...conf,generated};
 }
@@ -117,7 +151,7 @@ function stamp(d=new Date()){
 }
 function backup(){
  const db=database(),dir=path.join(projectRoot,'backups');
- try{fs.mkdirSync(dir,{recursive:true,mode:0o700});restrictWindowsAcl(dir,true)}catch(e){if(e.ownerCode)throw e;fail('E_BACKUP','無法建立或保護 backups 資料夾')}
+ try{fs.mkdirSync(dir,{recursive:true,mode:0o700});restrictWindowsAcl(dir);for(const n of fs.readdirSync(dir)){if(/^plumber-backup-.*\.sqlite$/i.test(n))restrictWindowsAcl(path.join(dir,n))}}catch(e){if(e.ownerCode)throw e;fail('E_BACKUP','無法建立或保護 backups 資料夾')}
  const target=path.join(dir,'plumber-backup-'+stamp()+'-'+crypto.randomBytes(3).toString('hex')+'.sqlite');
  try{
   db.exec("VACUUM INTO '"+target.replace(/'/g,"''")+"'");
@@ -167,4 +201,4 @@ async function execute(command=process.argv[2]){
  });
 }
 if(require.main===module)execute().catch(e=>{errorReport(e);process.exitCode=1});
-module.exports={versionOk,parseSettings,validateSettings,createFirstTimeConfig,stamp,help};
+module.exports={versionOk,parseSettings,validateSettings,createFirstTimeConfig,restrictWindowsAcl,secureDatabaseStorage,stamp,help};

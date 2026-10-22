@@ -98,3 +98,5 @@ npm run check
 詳細見 [業主部署與故障排除操作手冊](docs/業主部署操作手冊.md)。`data/`、`backups/`、`.env` 都不應上傳 GitHub 或交給無權限人員。安裝助手僅供**本機單機使用**，不支援把 3000 埠直接暴露至公網。
 
 如出現 `E_NODE`、`E_ENV`、`E_CONFIG`、`E_PATH`、`E_DB`、`E_PORT` 或 `E_BACKUP`，依手冊 SOP 處理，勿自行刪除資料庫及 `-wal`／`-shm`。首次安裝必須以實際 Windows 電腦執行交付驗收，並在隔離環境演練還原。
+
+**資料保護補充：**業主部署版本限制 SQLite 路徑只能是專案的 `data/*.sqlite`，拒絕絕對路徑、`..` 跳出及 UNC 網路分享；避免錯誤批次變更其他資料夾的 Windows 權限。Windows NTFS 私密資料以 PowerShell 建立僅當前 SID、SYSTEM、Administrators 的受保護 ACL，無法設定時拒絕啟動。`npm start` 直接啟動亦需通過相同權限檢查。

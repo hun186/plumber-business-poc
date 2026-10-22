@@ -1,0 +1,148 @@
+'use strict';
+/* Windows owner hand-off: native Node only; no installer dependency. */
+const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
+const {spawn}=require('node:child_process');
+const projectRoot=path.resolve(__dirname,'..');
+process.chdir(projectRoot);
+const envFile=path.join(projectRoot,'.env');
+const help={
+ E_NODE:'請到 https://nodejs.org/en/download 安裝 Node.js LTS（建議 v24，最低 v22.13），完成後重開視窗。',
+ E_ENV:'找不到設定檔。請在完整專案資料夾雙擊「啟動水電好管家.bat」。',
+ E_CONFIG:'密碼、系統密鑰或埠設定不完整；請勿傳送 .env，將錯誤代碼交給交付人員。',
+ E_PATH:'請確認專案位於有權限的本機磁碟，勿放唯讀、網路磁碟或同步中資料夾。',
+ E_DB:'資料庫無法讀取或完整性檢查失敗：停止使用並保留 data/backups，交由交付人員判斷。',
+ E_PORT:'服務埠被占用。可能已啟動另一份程式；先試開 http://127.0.0.1:3000。',
+ E_BACKUP:'備份失敗：檢查可用空間及備份資料夾權限；備份成功前請勿升級。',
+ E_VERCEL:'本機固定 SQLite 部署助手不可在 Vercel 使用。',
+ E_USAGE:'只支援 start、check、backup。'
+};
+function fail(code,message){const e=new Error(message||code);e.ownerCode=code;throw e}
+function versionOk(v=process.versions.node){const [major,minor]=v.split('.').map(Number);return major>22||(major===22&&minor>=13)}
+function parseSettings(raw){
+ const obj={};
+ for(const line of raw.split(/\r?\n/)){
+  const s=line.trim();if(!s||s.startsWith('#'))continue;
+  const m=s.match(/^([A-Z][A-Z0-9_]*)\s*=\s*(.*)$/);
+  if(!m)fail('E_CONFIG','設定檔的某一行格式不正確');
+  const k=m[1];if(Object.hasOwn(obj,k))fail('E_CONFIG','設定檔含重複鍵值：'+k);
+  let v=m[2].trim();
+  if(v.length>=2&&((v[0]==='"'&&v.at(-1)==='"')||(v[0]==="'"&&v.at(-1)==="'")))v=v.slice(1,-1);
+  obj[k]=v;
+ }
+ return obj;
+}
+function validateSettings(values){
+ if(!values.SQLITE_PATH?.trim())fail('E_CONFIG','缺少 SQLITE_PATH');
+ if(!values.APP_ADMIN_PASSWORD||values.APP_ADMIN_PASSWORD.length<12||values.APP_ADMIN_PASSWORD.startsWith('REPLACE_'))fail('E_CONFIG','管理密碼至少 12 字元，且不能使用範例字串');
+ if(!values.AUTH_SECRET||values.AUTH_SECRET.length<32||values.AUTH_SECRET.startsWith('REPLACE_'))fail('E_CONFIG','AUTH_SECRET 至少 32 個隨機字元');
+ for(const k of ['SQLITE_PATH','APP_ADMIN_PASSWORD','AUTH_SECRET'])if(/[\r\n]/.test(values[k]))fail('E_CONFIG','設定欄位不能包含換行');
+ if(values.SQLITE_PATH.startsWith('\\\\'))fail('E_PATH','SQLite 不適合放在網路共享磁碟');
+ if(process.env.VERCEL)fail('E_VERCEL');
+ const port=values.PORT?Number(values.PORT):3000;
+ if(!Number.isInteger(port)||port<1024||port>65535)fail('E_CONFIG','PORT 必須是 1024～65535');
+ return {port,databasePath:path.resolve(projectRoot,values.SQLITE_PATH)};
+}
+function createFirstTimeConfig(){
+ if(fs.existsSync(envFile))return null;
+ const password=crypto.randomBytes(24).toString('base64url');
+ const secret=crypto.randomBytes(48).toString('base64url');
+ const text='# 首次啟動自動建立。此檔含管理密碼，不可外傳或提交 GitHub。\n'+
+  'SQLITE_PATH=./data/plumber.sqlite\nAPP_ADMIN_PASSWORD='+password+'\nAUTH_SECRET='+secret+'\n';
+ try{fs.writeFileSync(envFile,text,{mode:0o600,flag:'wx',encoding:'utf8'})}
+ catch(e){if(e.code==='EEXIST')return null;fail('E_PATH','無法建立 .env（'+(e.code||'寫入失敗')+'）')}
+ return password;
+}
+function validatedConfig(){
+ if(!fs.existsSync(envFile))fail('E_ENV','找不到 .env');
+ let values;try{values=parseSettings(fs.readFileSync(envFile,'utf8'))}catch(e){if(e.ownerCode)throw e;fail('E_ENV','無法讀取設定檔')}
+ const conf=validateSettings(values);
+ for(const k of ['SQLITE_PATH','APP_ADMIN_PASSWORD','AUTH_SECRET'])process.env[k]=values[k];
+ if(values.PORT)process.env.PORT=values.PORT;
+ return conf;
+}
+function database(){
+ try{
+  const db=require('../lib/sqlite').connection();
+  const r=db.prepare('PRAGMA quick_check').all();
+  if(r.length!==1||Object.values(r[0])[0]!=='ok')fail('E_DB','SQLite quick_check 未通過');
+  const bad=db.prepare('PRAGMA foreign_key_check').all();
+  if(bad.length)fail('E_DB','外鍵關聯有 '+bad.length+' 項異常');
+  const tables=new Set(db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(r=>r.name));
+  for(const t of ['customers','projects','quotes','inventory_items','inventory_movements','work_templates'])if(!tables.has(t))fail('E_DB','缺少資料表：'+t);
+  return db;
+ }catch(e){if(e.ownerCode)throw e;fail('E_DB','SQLite 操作失敗（'+(e.code||e.name||'未知')+'）')}
+}
+function prerequisite(allowCreate){
+ if(!versionOk())fail('E_NODE','偵測到 Node.js '+process.version+'，最低版本為 v22.13');
+ if(process.env.VERCEL)fail('E_VERCEL');
+ const generated=allowCreate?createFirstTimeConfig():null;
+ const conf=validatedConfig();
+ try{fs.mkdirSync(path.dirname(conf.databasePath),{recursive:true,mode:0o700});
+  fs.accessSync(path.dirname(conf.databasePath),fs.constants.R_OK|fs.constants.W_OK)}
+ catch(e){fail('E_PATH','無法讀寫資料庫目錄（'+(e.code||'權限問題')+'）')}
+ database();
+ return {...conf,generated};
+}
+function stamp(d=new Date()){
+ const local=new Date(d.getTime()-d.getTimezoneOffset()*60000);
+ return local.toISOString().replace(/[-:]/g,'').replace('T','-').slice(0,15);
+}
+function backup(){
+ const db=database(),dir=path.join(projectRoot,'backups');
+ try{fs.mkdirSync(dir,{recursive:true,mode:0o700})}catch(e){fail('E_BACKUP','無法建立 backups 資料夾')}
+ const target=path.join(dir,'plumber-backup-'+stamp()+'-'+crypto.randomBytes(3).toString('hex')+'.sqlite');
+ try{
+  db.exec("VACUUM INTO '"+target.replace(/'/g,"''")+"'");
+  const {DatabaseSync}=require('node:sqlite');
+  const check=new DatabaseSync(target,{readOnly:true});
+  try{if(check.prepare('PRAGMA quick_check').get().quick_check!=='ok')throw Error('備份驗證失敗')}
+  finally{check.close()}
+  console.log('[完成] 已建立一致性 SQLite 備份：'+target);
+  console.log('[驗證] SQLite quick_check 正常；大小 '+(fs.statSync(target).size/1048576).toFixed(2)+' MB');
+  console.log('請另複製一份到受保護的外接硬碟或加密備份位置。');
+ }catch(e){try{if(fs.existsSync(target))fs.unlinkSync(target)}catch{}
+  fail('E_BACKUP','SQLite VACUUM INTO 或備份驗證失敗（'+(e.code||e.message)+'）')}
+}
+function launch(url){
+ if(process.env.OWNER_NO_BROWSER==='1')return;
+ try{
+  let bin,args;if(process.platform==='win32'){bin='explorer.exe';args=[url]}
+  else if(process.platform==='darwin'){bin='open';args=[url]}
+  else return;
+  const child=spawn(bin,args,{detached:true,stdio:'ignore',windowsHide:true});
+  child.on('error',()=>{});child.unref();
+ }catch{}
+}
+function errorReport(e){
+ const k=e.ownerCode||'E_DB';
+ console.error('\n[錯誤 '+k+'] '+e.message);
+ console.error('[處理方式] '+(help[k]||'保留資料，聯絡交付人員。'));
+ console.error('回報時請提供錯誤代碼及畫面截圖，切勿提供管理密碼或 .env。');
+}
+async function execute(command=process.argv[2]){
+ if(!['start','check','backup'].includes(command))fail('E_USAGE','不支援的命令：'+String(command||'未指定'));
+ console.log('水電好管家｜業主部署助手');
+ const config=prerequisite(command==='start');
+ console.log('[通過] Node.js '+process.version);
+ console.log('[通過] SQLite 已初始化，資料完整性檢查正常');
+ console.log('[資料庫] '+config.databasePath);
+ if(config.generated){
+  console.log('\n***** 首次建立管理密碼（只在建立時顯示）*****');
+  console.log(config.generated);
+  console.log('請現在抄下密碼妥善保管；勿把畫面或 .env 傳給其他人。');
+  console.log('忘記密碼：授權管理員可在 .env 查看 APP_ADMIN_PASSWORD。');
+  console.log('*******************************************\n');
+ }
+ if(command==='check'){console.log('[通過] 部署檢查完成；可雙擊「啟動水電好管家.bat」。');return}
+ if(command==='backup'){backup();return}
+ const server=require('../server'),url='http://127.0.0.1:'+config.port;
+ server.on('error',e=>{errorReport(Object.assign(new Error('無法啟動服務（'+(e.code||e.message)+'）'),{ownerCode:e.code==='EADDRINUSE'?'E_PORT':'E_PATH'}));process.exitCode=1});
+ server.listen(config.port,'127.0.0.1',()=>{
+  console.log('[啟動成功] '+url);
+  console.log('請保持這個視窗開啟；關閉視窗網站會停止。Ctrl+C 可停止。');
+  console.log('此網址只能在本機使用；遠端或多人使用須另行部署 HTTPS。');
+  launch(url);
+ });
+}
+if(require.main===module)execute().catch(e=>{errorReport(e);process.exitCode=1});
+module.exports={versionOk,parseSettings,validateSettings,createFirstTimeConfig,stamp,help};

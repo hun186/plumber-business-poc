@@ -58,3 +58,34 @@ test('direct npm start shares strong owner config rules and Windows secrets requ
  assert.match(source,/restrictWindowsAcl\(path\.dirname\(conf\.databasePath\),true\)/);
  assert.ok(source.indexOf('if(generated)printNewPassword(generated)')<source.indexOf('const conf=validatedConfig()'));
 });
+
+test('direct startup rejects the publicly known example credentials before creating any SQLite data',()=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'owner-direct-invalid-'));
+ try{
+  for(const folder of ['api','tools'])fs.mkdirSync(path.join(root,folder));
+  for(const f of ['server.js','tools/owner-cli.js','api/_auth.js'])fs.copyFileSync(path.join(__dirname,'..',f),path.join(root,f));
+  for(const f of ['status','login','data','inventory','catalog'])
+   fs.writeFileSync(path.join(root,'api',f+'.js'),'module.exports=(req,res)=>res.status(503).json({error:"stub"});\n');
+  fs.copyFileSync(path.join(__dirname,'..','.env.example'),path.join(root,'.env'));
+  const env={...process.env};for(const k of ['SQLITE_PATH','APP_ADMIN_PASSWORD','AUTH_SECRET','VERCEL'])delete env[k];
+  const run=spawnSync(process.execPath,['--env-file=.env','server.js'],{cwd:root,env,encoding:'utf8',timeout:9000});
+  assert.notEqual(run.status,0);
+  assert.match(run.stderr,/\[E_CONFIG\]/);
+  assert.equal(fs.existsSync(path.join(root,'data','plumber.sqlite')),false);
+ }finally{fs.rmSync(root,{force:true,recursive:true})}
+});
+test('initial generated login password is shown even if SQLite initialization subsequently fails',()=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'owner-failed-first-'));
+ try{
+  for(const folder of ['tools','lib'])fs.mkdirSync(path.join(root,folder));
+  fs.copyFileSync(path.join(__dirname,'..','tools/owner-cli.js'),path.join(root,'tools','owner-cli.js'));
+  fs.writeFileSync(path.join(root,'lib','sqlite.js'),'exports.connection=()=>{throw new Error("simulated disk failure")};\n');
+  const env={...process.env,OWNER_NO_BROWSER:'1'};delete env.VERCEL;
+  const run=spawnSync(process.execPath,['tools/owner-cli.js','start'],{cwd:root,env,encoding:'utf8',timeout:9000});
+  assert.notEqual(run.status,0);
+  assert.match(run.stdout,/首次建立管理密碼/);
+  assert.match(run.stderr,/\[錯誤 E_DB\]/);
+  assert.ok(fs.existsSync(path.join(root,'.env')));
+  assert.match(fs.readFileSync(path.join(root,'.env'),'utf8'),/^AUTH_SECRET=/m);
+ }finally{fs.rmSync(root,{recursive:true,force:true})}
+});

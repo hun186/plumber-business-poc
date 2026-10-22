@@ -65,8 +65,8 @@ foreach ($entry in @($acl.Access)) { [void]$acl.RemoveAccessRuleSpecific($entry)
 $isFolder = (Get-Item -LiteralPath $target).PSIsContainer
 $inherit = if ($isFolder) { [System.Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit' } else { [System.Security.AccessControl.InheritanceFlags]::None }
 foreach ($who in $allowed) {
-  $identity = New-Object System.Security.Principal.SecurityIdentifier($who)
-  $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($identity, [System.Security.AccessControl.FileSystemRights]::FullControl, $inherit, [System.Security.AccessControl.PropagationFlags]::None, [System.Security.AccessControl.AccessControlType]::Allow)
+  $identity = [System.Security.Principal.SecurityIdentifier]::new($who)
+  $rule = [System.Security.AccessControl.FileSystemAccessRule]::new($identity, [System.Security.AccessControl.FileSystemRights]::FullControl, $inherit, [System.Security.AccessControl.PropagationFlags]::None, [System.Security.AccessControl.AccessControlType]::Allow)
   [void]$acl.AddAccessRule($rule)
 }
 Set-Acl -LiteralPath $target -AclObject $acl
@@ -81,7 +81,12 @@ foreach ($entry in $confirmed.Access) {
    env:{...process.env,OWNER_ACL_PATH:target,OWNER_ACL_SID:sid},
    encoding:'utf8',windowsHide:true,timeout:30000,stdio:['ignore','pipe','pipe']
   });
- }catch(e){if(e.ownerCode)throw e;fail('E_PATH','Windows ACL 安全檢查未通過（'+(e.code||e.name)+'），為保護密碼及客戶資料，已停止操作')}
+ }catch(e){
+  if(e.ownerCode)throw e;
+  if(process.env.OWNER_ACL_DEBUG==='1'&&e.stderr)
+   console.error('[Windows ACL 診斷]',String(e.stderr).slice(-1800));
+  fail('E_PATH','Windows ACL 安全檢查未通過（'+(e.code||e.name)+'），為保護密碼及客戶資料，已停止操作');
+ }
 }
 function secureDatabaseStorage(conf){
  const ownDir=path.join(projectRoot,'data');

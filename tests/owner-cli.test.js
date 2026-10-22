@@ -13,7 +13,7 @@ test('owner config validation and minimum Node.js requirement',()=>{
  assert.throws(()=>owner.validateSettings({...cfg,APP_ADMIN_PASSWORD:'REPLACE_WITH_PASSWORD'}),/管理密碼/);
  assert.throws(()=>owner.validateSettings({...cfg,AUTH_SECRET:'short'}),/AUTH_SECRET/);
  assert.throws(()=>owner.validateSettings({...cfg,PORT:'99999'}),/PORT/);
- assert.throws(()=>owner.validateSettings({...cfg,SQLITE_PATH:'\\\\server\\share\\db.sqlite'}),/網路共享/);
+ assert.throws(()=>owner.validateSettings({...cfg,SQLITE_PATH:'\\\\server\\share\\db.sqlite'}),/網路磁碟|資料庫/);
 });
 test('owner config parser rejects duplicate or malformed .env entries',()=>{
  const valid=owner.parseSettings('# header\r\nSQLITE_PATH=./data/db.sqlite\r\nAPP_ADMIN_PASSWORD="a long sample password"\r\nAUTH_SECRET=abcdefghijklmnopqrstuvwxyz012345\r\n');
@@ -29,7 +29,7 @@ test('a clean owner folder passes diagnostics and creates a verified VACUUM back
   const copy=file=>fs.copyFileSync(path.join(__dirname,'..',file),path.join(root,file));
   for(const file of ['tools/owner-cli.js','lib/sqlite.js','db/schema.sqlite.sql','db/inventory.sql','db/catalog.sql'])copy(file);
   fs.writeFileSync(path.join(root,'.env'),'SQLITE_PATH=./data/business.sqlite\nAPP_ADMIN_PASSWORD=a-test-only-strong-password\nAUTH_SECRET='+'s'.repeat(50)+'\nPORT=33445\n');
-  const env={...process.env,OWNER_NO_BROWSER:'1'};delete env.VERCEL;
+  const env={...process.env,OWNER_NO_BROWSER:'1',OWNER_ACL_DEBUG:'1'};delete env.VERCEL;
   const call=cmd=>spawnSync(process.execPath,['tools/owner-cli.js',cmd],{cwd:root,env,encoding:'utf8',timeout:15000});
   const check=call('check');assert.equal(check.status,0,check.stderr||check.stdout);
   assert.match(check.stdout,/完整性檢查正常/);

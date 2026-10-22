@@ -35,6 +35,17 @@ test('a clean owner folder passes diagnostics and creates a verified VACUUM back
   assert.match(check.stdout,/完整性檢查正常/);
   assert.doesNotMatch(check.stdout,/a-test-only-strong-password/);
   assert.ok(fs.existsSync(path.join(root,'data','business.sqlite')));
+  if(process.platform==='win32'){
+   const {execFileSync}=require('node:child_process');
+   const envPath=path.join(root,'.env');
+   // Regression: a restored .env with an explicit Everyone ACE must be
+   // made private again on the next deployment check.
+   execFileSync('icacls.exe',[envPath,'/grant','*S-1-1-0:(R)'],{windowsHide:true});
+   const second=call('check');
+   assert.equal(second.status,0,second.stderr||second.stdout);
+   const aclOutput=execFileSync('icacls.exe',[envPath],{encoding:'utf8'});
+   assert.doesNotMatch(aclOutput,/Everyone|S-1-1-0|所有人/i,'Unapproved Everyone ACL must be removed');
+  }
   const backup=call('backup');assert.equal(backup.status,0,backup.stderr||backup.stdout);
   assert.match(backup.stdout,/已建立一致性 SQLite 備份/);
   const copies=fs.readdirSync(path.join(root,'backups')).filter(x=>x.endsWith('.sqlite'));

@@ -128,7 +128,7 @@ test('disappeared business database never gets silently recreated by check, back
  try{
   for(const folder of ['tools','lib','db','api'])fs.mkdirSync(path.join(root,folder));
   const copy=f=>fs.copyFileSync(path.join(__dirname,'..',f),path.join(root,f));
-  for(const file of ['tools/owner-cli.js','lib/sqlite.js','db/schema.sqlite.sql','db/inventory.sql','db/catalog.sql','db/backup.sql','server.js','api/_auth.js'])copy(file);
+  for(const file of ['tools/owner-cli.js','lib/sqlite.js','lib/backup-manager.js','lib/backup-worker.js','db/schema.sqlite.sql','db/inventory.sql','db/catalog.sql','db/backup.sql','server.js','api/_auth.js'])copy(file);
   for(const api of ['status','login','data','inventory','catalog','backups'])
    fs.writeFileSync(path.join(root,'api',api+'.js'),'module.exports=()=>{};');
   const env={...process.env,OWNER_NO_BROWSER:'1'};for(const key of ['VERCEL','SQLITE_PATH','APP_ADMIN_PASSWORD','AUTH_SECRET','PORT'])delete env[key];
@@ -178,7 +178,7 @@ test('existing SQLite with missing core table is rejected before migration can r
  try{
   for(const folder of ['tools','lib','db','api'])fs.mkdirSync(path.join(root,folder));
   const copy=f=>fs.copyFileSync(path.join(__dirname,'..',f),path.join(root,f));
-  for(const file of ['tools/owner-cli.js','lib/sqlite.js','db/schema.sqlite.sql','db/inventory.sql','db/catalog.sql','db/backup.sql','server.js','api/_auth.js'])copy(file);
+  for(const file of ['tools/owner-cli.js','lib/sqlite.js','lib/backup-manager.js','lib/backup-worker.js','db/schema.sqlite.sql','db/inventory.sql','db/catalog.sql','db/backup.sql','server.js','api/_auth.js'])copy(file);
   for(const api of ['status','login','data','inventory','catalog','backups'])
    fs.writeFileSync(path.join(root,'api',api+'.js'),'module.exports=()=>{};');
   const env={...process.env,OWNER_NO_BROWSER:'1'};for(const k of ['VERCEL','SQLITE_PATH','APP_ADMIN_PASSWORD','AUTH_SECRET','PORT'])delete env[k];
@@ -226,7 +226,7 @@ test('valid v0.2 core-only SQLite preserves business data across additive v0.3 a
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'owner-legacy-v2-'));
  try{
   for(const folder of ['tools','lib','db'])fs.mkdirSync(path.join(root,folder));
-  for(const file of ['tools/owner-cli.js','lib/sqlite.js','db/schema.sqlite.sql','db/inventory.sql','db/catalog.sql','db/backup.sql'])
+  for(const file of ['tools/owner-cli.js','lib/sqlite.js','lib/backup-manager.js','lib/backup-worker.js','db/schema.sqlite.sql','db/inventory.sql','db/catalog.sql','db/backup.sql'])
    fs.copyFileSync(path.join(__dirname,'..',file),path.join(root,file));
   fs.writeFileSync(path.join(root,'.env'),'SQLITE_PATH=./data/plumber.sqlite\nAPP_ADMIN_PASSWORD=strong-test-password-owner-only\nAUTH_SECRET='+'x'.repeat(50)+'\n');
   fs.mkdirSync(path.join(root,'data'));
@@ -258,5 +258,24 @@ test('missing runtime-required SQLite customer phone column is rejected before a
    assert.equal(unchanged.prepare("SELECT COUNT(*) AS n FROM pragma_table_info('customers') WHERE name='phone'").get().n,0);
    assert.equal(unchanged.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name='costs'").get().n,1);
   }finally{unchanged.close()}
+ }finally{fs.rmSync(root,{recursive:true,force:true,maxRetries:14,retryDelay:200})}
+});
+
+test('SQLite database symlinks are blocked before startup or ACL access',()=>{
+ if(process.platform==='win32')return;
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'owner-linked-db-'));
+ try{
+  const dir=path.join(root,'data'),outside=path.join(root,'external.sqlite');
+  fs.mkdirSync(dir);
+  const {DatabaseSync}=require('node:sqlite'),source=new DatabaseSync(outside);
+  source.exec(fs.readFileSync(path.join(__dirname,'../db/schema.sqlite.sql'),'utf8'));
+  source.close();
+  fs.symlinkSync(outside,path.join(dir,'plumber.sqlite'));
+  const configuration={databasePath:path.join(dir,'plumber.sqlite')};
+  assert.throws(()=>owner.assertDatabasePresent(configuration),/符號連結/);
+  assert.throws(()=>owner.secureDatabaseStorage(configuration),/不是安全的實體檔案/);
+  const verified=new DatabaseSync(outside,{readOnly:true});
+  try{assert.ok(verified.prepare("SELECT name FROM sqlite_master WHERE name='customers'").get())}
+  finally{verified.close()}
  }finally{fs.rmSync(root,{recursive:true,force:true,maxRetries:14,retryDelay:200})}
 });

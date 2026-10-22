@@ -251,7 +251,7 @@ function launch(url){
  }catch{}
 }
 function errorReport(e){
- const k=e.ownerCode||'E_DB';
+ const k=e.ownerCode||(help[e.code]?e.code:'E_DB');
  console.error('\n[錯誤 '+k+'] '+e.message);
  console.error('[處理方式] '+(help[k]||'保留資料，聯絡交付人員。'));
  console.error('回報時請提供錯誤代碼及畫面截圖，切勿提供管理密碼或 .env。');

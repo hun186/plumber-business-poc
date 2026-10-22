@@ -279,3 +279,19 @@ test('SQLite database symlinks are blocked before startup or ACL access',()=>{
   finally{verified.close()}
  }finally{fs.rmSync(root,{recursive:true,force:true,maxRetries:14,retryDelay:200})}
 });
+
+test('linked existing .env cannot be read or have external Windows ACL changed',()=>{
+ if(process.platform==='win32')return;
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'owner-env-link-'));
+ try{
+  fs.mkdirSync(path.join(root,'tools'));
+  fs.copyFileSync(path.join(__dirname,'../tools/owner-cli.js'),path.join(root,'tools','owner-cli.js'));
+  const external=path.join(root,'external-settings');
+  fs.writeFileSync(external,'SQLITE_PATH=./data/plumber.sqlite\nAPP_ADMIN_PASSWORD=1234567890123456\nAUTH_SECRET='+'x'.repeat(48)+'\n');
+  fs.symlinkSync(external,path.join(root,'.env'));
+  const attempt=spawnSync(process.execPath,['-e',"require('./tools/owner-cli').prerequisite(false)"],{cwd:root,encoding:'utf8',timeout:12000});
+  assert.notEqual(attempt.status,0);
+  assert.match(attempt.stderr,/E_PATH|符號連結|實體檔案/);
+  assert.equal(fs.readFileSync(external,'utf8').includes('AUTH_SECRET='),true);
+ }finally{fs.rmSync(root,{recursive:true,force:true,maxRetries:14,retryDelay:200})}
+});

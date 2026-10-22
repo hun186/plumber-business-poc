@@ -227,3 +227,66 @@ test('backup Worker cannot recreate a deployed database missing after initial bo
   assert.deepEqual(output.files,[]);
  }finally{fs.rmSync(root,{recursive:true,force:true,maxRetries:15,retryDelay:200})}
 });
+
+test('unverified .partial SQLite is invisible to backup history and download lookup',()=>{
+ const root=fixture();
+ try{
+  const result=call(root,`
+   require('./tools/owner-cli').prerequisite(true);
+   const fs=require('node:fs'),path=require('node:path'),manager=require('./lib/backup-manager');
+   fs.mkdirSync('backups',{recursive:true});
+   const pending='plumber-backup-20261022-213000-abcdef-auto.sqlite';
+   fs.writeFileSync(path.join('backups',pending+'.partial'),'incomplete data');
+   let error='';
+   try{manager.safeFile(pending)}catch(e){error=e.code}
+   console.log(JSON.stringify({listed:manager.items().map(e=>e.name),error,present:fs.existsSync(path.join('backups',pending+'.partial'))}));
+  `);
+  assert.deepEqual(result.listed,[]);
+  assert.equal(result.error,'E_BACKUP');
+  assert.equal(result.present,true);
+ }finally{fs.rmSync(root,{recursive:true,force:true,maxRetries:15,retryDelay:200})}
+});
+test('editing retention reports persisted setting and cleanup error if old backups are locked',()=>{
+ const root=fixture();
+ try{
+  const result=call(root,`
+   require('./tools/owner-cli').prerequisite(true);
+   const fs=require('node:fs'),manager=require('./lib/backup-manager'),db=require('./lib/sqlite').connection();
+   manager.saveSettings({intervalDays:1,retentionCount:2},db);
+   const first=manager.makeBackup('auto',new Date('2026-10-19T12:00:00Z'),db);
+   manager.makeBackup('auto',new Date('2026-10-20T12:00:00Z'),db);
+   const original=fs.unlinkSync;
+   fs.unlinkSync=function(file,...rest){
+    if(String(file).endsWith(first.name))throw Object.assign(new Error('simulated lock'),{code:'EPERM'});
+    return original.call(this,file,...rest);
+   };
+   const saved=manager.saveSettings({intervalDays:4,retentionCount:1},db);
+   fs.unlinkSync=original;
+   console.log(JSON.stringify({intervalDays:saved.intervalDays,retentionCount:saved.retentionCount,lastError:saved.lastError,backupCount:saved.backups.length}));
+  `);
+  assert.equal(result.intervalDays,4);
+  assert.equal(result.retentionCount,1);
+  assert.equal(result.backupCount,2);
+  assert.match(result.lastError,/清理舊版失敗/);
+  assert.match(result.lastError,/EPERM/);
+ }finally{fs.rmSync(root,{recursive:true,force:true,maxRetries:15,retryDelay:200})}
+});
+test('managed backup files have Windows explicit broad access removed before listing',()=>{
+ if(process.platform!=='win32')return;
+ const root=fixture();
+ try{
+  const result=call(root,`
+   require('./tools/owner-cli').prerequisite(true);
+   const fs=require('node:fs'),path=require('node:path'),cp=require('node:child_process'),b=require('./lib/backup-manager');
+   const file=b.makeBackup('manual');
+   const full=path.join('backups',file.name);
+   cp.execFileSync('icacls.exe',[full,'/grant','*S-1-1-0:(R)'],{windowsHide:true});
+   const before=cp.execFileSync('icacls.exe',[full],{encoding:'utf8'});
+   b.items();
+   const after=cp.execFileSync('icacls.exe',[full],{encoding:'utf8'});
+   console.log(JSON.stringify({exposed:/S-1-1-0|Everyone|所有人/i.test(before),clean:!/S-1-1-0|Everyone|所有人/i.test(after)}));
+  `);
+  assert.equal(result.exposed,true);
+  assert.equal(result.clean,true);
+ }finally{fs.rmSync(root,{recursive:true,force:true,maxRetries:15,retryDelay:200})}
+});

@@ -96,3 +96,32 @@ test('backup API is authenticated, origin-checked and supports listing, configur
   assert.deepEqual(x,{anonymous:401,foreign:403,status:200,defaults:1,saved:7,remaining:0});
  }finally{fs.rmSync(root,{recursive:true,force:true,maxRetries:15,retryDelay:200})}
 });
+
+test('backup management page renders full configuration and escapes user-visible history safely',async()=>{
+ const vm=require('node:vm'),html=fs.readFileSync(path.join(__dirname,'../backup-ui.js'),'utf8');
+ const main={innerHTML:''},sample={intervalDays:1,retentionCount:50,
+  lastAutoAt:'2026-10-22T06:20:00.000Z',nextDueAt:'2026-10-23T06:20:00.000Z',
+  backups:[{type:'manual',createdAt:'2026-10-22T06:21:00.000Z',
+   name:'plumber-backup-20261022-142100-aabbcc-manual.sqlite',size:2048}],lastError:null};
+ const ctx={state:{server:true,page:'backups'},
+  head:()=>'<h1>備份管理</h1>',
+  esc:s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),
+  $:key=>key==='#backup-panel'?main:null,
+  $$:()=>[],fetch:async()=>({ok:true,json:async()=>sample}),toast(){},confirm:()=>true,
+  location:{href:''}};
+ const ui=vm.runInNewContext(html+'\nBackupUI;',ctx);
+ assert.match(ui.render(),/備份管理/);
+ assert.match(ui.render(),/系統服務執行期間/);
+ ui.bind();
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.match(main.innerHTML,/備份間隔（天）/);
+ assert.match(main.innerHTML,/retentionCount/);
+ assert.match(main.innerHTML,/value="50"/);
+ assert.match(main.innerHTML,/立即建立手動備份/);
+ assert.match(main.innerHTML,/歷史備份/);
+ assert.match(main.innerHTML,/下載/);
+ assert.match(main.innerHTML,/刪除/);
+ assert.match(main.innerHTML,/不能直接在運作中的網站覆蓋資料庫/);
+ ctx.state.server=false;
+ assert.match(ui.render(),/展示模式無法建立可還原的備份/);
+});

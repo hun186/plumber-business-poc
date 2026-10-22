@@ -25,7 +25,7 @@ const BackupUI=(()=>{
    '<div class="backup-meta"><span><b>上次自動備份：</b>'+safe(iso(data.lastAutoAt))+'</span><span><b>下次預計：</b>'+safe(iso(data.nextDueAt))+'</span><span><b>目前自動版本：</b>'+automated+' 份</span></div>'+
    (data.lastError?'<div class="backup-error" role="alert">⚠ 最近一次自動備份錯誤：'+safe(data.lastError)+'</div>':'')+
    '<div class="backup-actions"><button id="backup-create" class="btn primary">立即建立手動備份</button><button id="backup-reload" class="btn">重新整理</button></div></section>'+
-   '<section class="panel"><h2 class="panel-title">歷史備份</h2><p class="panel-sub">已建立 '+rows.length+' 個版本。可下載 SQLite 檔案；刪除前會再次確認。**資料還原必須停止系統後由管理人員執行，不能直接在運作中的網站覆蓋資料庫。**</p>'+
+   '<section class="panel"><h2 class="panel-title">歷史備份</h2><p class="panel-sub">已建立 '+rows.length+' 個版本。可下載 SQLite 檔案；刪除前會再次確認。<strong>資料還原必須停止系統後由管理人員執行，不能直接在運作中的網站覆蓋資料庫。</strong></p>'+
    (rows.length?'<div class="table-scroll"><table><thead><tr><th>備份時間</th><th>類型</th><th>大小</th><th>檔案名稱</th><th>操作</th></tr></thead><tbody>'+
     rows.map(entry=>'<tr><td>'+safe(iso(entry.createdAt))+'</td><td>'+(entry.type==='auto'?'自動':'手動')+'</td><td>'+safe(size(entry.size))+'</td><td class="backup-filename">'+safe(entry.name)+'</td><td><button class="action-link" data-backup-download="'+safe(entry.name)+'">下載</button> <button class="action-link backup-danger" data-backup-delete="'+safe(entry.name)+'">刪除</button></td></tr>').join('')+'</tbody></table></div>':
     '<p class="small-note">尚無備份。可以先按「立即建立手動備份」。</p>')+'</section>';

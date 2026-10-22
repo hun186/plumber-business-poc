@@ -111,6 +111,15 @@ function printNewPassword(pw){
  console.log('忘記密碼：授權管理員可在 .env 查看 APP_ADMIN_PASSWORD。');
  console.log('*******************************************\n');
 }
+function assertPrivateConfigFile(){
+ let stat;
+ try{stat=fs.lstatSync(envFile)}catch(e){
+  if(e.code==='ENOENT')fail('E_ENV','找不到 .env');
+  fail('E_PATH','無法檢查 .env（'+(e.code||'未知錯誤')+'）');
+ }
+ if(!stat.isFile()||stat.isSymbolicLink())fail('E_PATH','.env 必須是本機安全的實體檔案，拒絕符號連結或 Windows junction');
+ return true;
+}
 function createFirstTimeConfig(){
  if(fs.existsSync(envFile))return null;
  const password=crypto.randomBytes(24).toString('base64url');
@@ -124,7 +133,7 @@ function createFirstTimeConfig(){
  return password;
 }
 function validatedConfig(){
- if(!fs.existsSync(envFile))fail('E_ENV','找不到 .env');
+ assertPrivateConfigFile();
  let values;try{values=parseSettings(fs.readFileSync(envFile,'utf8'))}catch(e){if(e.ownerCode)throw e;fail('E_ENV','無法讀取設定檔')}
  const conf=validateSettings(values);
  for(const k of ['SQLITE_PATH','APP_ADMIN_PASSWORD','AUTH_SECRET'])process.env[k]=values[k];
@@ -220,6 +229,7 @@ function prerequisite(allowCreate){
  // Display the first-time password before any fallible database I/O.
  if(generated)printNewPassword(generated);
  const conf=validatedConfig();
+ assertPrivateConfigFile();
  restrictWindowsAcl(envFile);
  try{secureDatabaseStorage(conf)}
  catch(e){if(e.ownerCode)throw e;fail('E_PATH','無法讀寫資料庫目錄（'+(e.code||'權限問題')+'）')}
@@ -275,5 +285,5 @@ async function execute(command=process.argv[2]){
   require('../lib/backup-manager').startScheduler();
  });
 }
-module.exports={versionOk,parseSettings,validateSettings,createFirstTimeConfig,restrictWindowsAcl,secureDatabaseStorage,assertDatabasePresent,verifyEstablishedSchema,prerequisite,stamp,help};
+module.exports={versionOk,parseSettings,validateSettings,createFirstTimeConfig,assertPrivateConfigFile,restrictWindowsAcl,secureDatabaseStorage,assertDatabasePresent,verifyEstablishedSchema,prerequisite,stamp,help};
 if(require.main===module)execute().catch(e=>{errorReport(e);process.exitCode=1});

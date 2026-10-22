@@ -32,6 +32,7 @@ if(require.main===module){
  let validated=false;
  try{
   const owner=require('./tools/owner-cli');
+  owner.assertPrivateConfigFile();
   const values=owner.parseSettings(fs.readFileSync(path.join(base,'.env'),'utf8'));
   const cfg=owner.validateSettings(values);
   owner.restrictWindowsAcl(path.join(base,'.env'));

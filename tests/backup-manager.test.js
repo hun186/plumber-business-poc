@@ -206,3 +206,24 @@ test('automatic retention failure remains visible while preserving verified new 
   assert.match(x.lastError,/EPERM/);
  }finally{fs.rmSync(root,{recursive:true,force:true,maxRetries:15,retryDelay:200})}
 });
+
+test('backup Worker cannot recreate a deployed database missing after initial boot',()=>{
+ const root=fixture();
+ try{
+  const output=call(root,`
+   const fs=require('node:fs'),path=require('node:path');
+   require('./tools/owner-cli').prerequisite(true);
+   const file=path.join(process.cwd(),'data','plumber.sqlite');
+   fs.renameSync(file,file+'.saved');
+   const backup=require('./lib/backup-manager');
+   backup.makeBackupAsync('manual').then(()=>{
+    console.log(JSON.stringify({unexpected:true}));
+   }).catch(e=>{
+    console.log(JSON.stringify({code:e.code,exists:fs.existsSync(file),files:fs.existsSync('backups')?fs.readdirSync('backups'):[]}));
+   });
+  `);
+  assert.equal(output.code,'E_DB');
+  assert.equal(output.exists,false);
+  assert.deepEqual(output.files,[]);
+ }finally{fs.rmSync(root,{recursive:true,force:true,maxRetries:15,retryDelay:200})}
+});

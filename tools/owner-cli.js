@@ -125,6 +125,22 @@ function validatedConfig(){
  if(values.PORT)process.env.PORT=values.PORT;
  return conf;
 }
+// Never let SQLite auto-create a replacement after a previous installation.
+// Only the same process which just created the first .env may bootstrap a new DB.
+function assertDatabasePresent(conf,allowFirstInstall=false){
+ let info=null;
+ try{info=fs.statSync(conf.databasePath)}catch(error){
+  if(error.code!=='ENOENT')fail('E_DB','無法檢查既有資料庫：'+(error.code||'存取失敗'));
+ }
+ if(info){
+  if(!info.isFile()||info.size===0)fail('E_DB','資料庫不是有效的資料檔，或檔案已經是 0 位元組；已停止以避免資料遺失');
+  return true;
+ }
+ if(!allowFirstInstall)fail('E_DB','原本設定的 SQLite 資料庫不見了；為避免重建空白資料庫，已停止。請保留 data 和 backups，聯絡交付者協助還原');
+ if(fs.existsSync(conf.databasePath+'-wal')||fs.existsSync(conf.databasePath+'-shm'))
+  fail('E_DB','尚有舊 SQLite WAL/SHM 資料，拒絕建立空白資料庫；請聯絡交付者');
+ return false;
+}
 function database(){
  try{
   const db=require('../lib/sqlite').connection();
@@ -147,6 +163,7 @@ function prerequisite(allowCreate){
  restrictWindowsAcl(envFile);
  try{secureDatabaseStorage(conf)}
  catch(e){if(e.ownerCode)throw e;fail('E_PATH','無法讀寫資料庫目錄（'+(e.code||'權限問題')+'）')}
+ assertDatabasePresent(conf,Boolean(generated));
  database();
  return {...conf,generated};
 }
@@ -206,4 +223,4 @@ async function execute(command=process.argv[2]){
  });
 }
 if(require.main===module)execute().catch(e=>{errorReport(e);process.exitCode=1});
-module.exports={versionOk,parseSettings,validateSettings,createFirstTimeConfig,restrictWindowsAcl,secureDatabaseStorage,stamp,help};
+module.exports={versionOk,parseSettings,validateSettings,createFirstTimeConfig,restrictWindowsAcl,secureDatabaseStorage,assertDatabasePresent,prerequisite,stamp,help};

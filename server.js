@@ -36,12 +36,14 @@ if(require.main===module){
   const cfg=owner.validateSettings(values);
   owner.restrictWindowsAcl(path.join(base,'.env'));
   owner.secureDatabaseStorage(cfg);
+  owner.assertDatabasePresent(cfg);
   for(const key of ['SQLITE_PATH','APP_ADMIN_PASSWORD','AUTH_SECRET']){
    if(process.env[key]!==values[key])throw Error('目前環境與 .env 的 '+key+' 不一致');
   }
   validated=true;
  }catch(err){
-  console.error('[E_CONFIG] 正式 SQLite 設定驗證失敗（'+(err.ownerCode||err.message)+'）；不可使用範例密碼、過短密鑰或網路共享資料庫。');
+  const code=err.ownerCode||'E_CONFIG';
+  console.error('['+code+'] 正式系統啟動前檢查失敗（'+(err.message||'未知錯誤')+'），不得自動建立空白資料庫。');
  }
  if(!enabled()||!validated){
   console.error('[E_CONFIG] 缺少有效 SQLite_PATH、APP_ADMIN_PASSWORD 或 AUTH_SECRET，不能啟動正式服務。');

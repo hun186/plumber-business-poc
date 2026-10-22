@@ -28,13 +28,15 @@ test('a clean owner folder passes diagnostics and creates a verified VACUUM back
   for(const folder of ['tools','lib','db'])fs.mkdirSync(path.join(root,folder));
   const copy=file=>fs.copyFileSync(path.join(__dirname,'..',file),path.join(root,file));
   for(const file of ['tools/owner-cli.js','lib/sqlite.js','db/schema.sqlite.sql','db/inventory.sql','db/catalog.sql'])copy(file);
-  fs.writeFileSync(path.join(root,'.env'),'SQLITE_PATH=./data/business.sqlite\nAPP_ADMIN_PASSWORD=a-test-only-strong-password\nAUTH_SECRET='+'s'.repeat(50)+'\nPORT=33445\n');
   const env={...process.env,OWNER_NO_BROWSER:'1',OWNER_ACL_DEBUG:'1'};delete env.VERCEL;
   const call=cmd=>spawnSync(process.execPath,['tools/owner-cli.js',cmd],{cwd:root,env,encoding:'utf8',timeout:15000});
+  const setup=spawnSync(process.execPath,['-e',"require('./tools/owner-cli.js').prerequisite(true)"],{cwd:root,env,encoding:'utf8',timeout:15000});
+  assert.equal(setup.status,0,setup.stderr||setup.stdout);
+  assert.match(setup.stdout,/首次建立管理密碼/);
   const check=call('check');assert.equal(check.status,0,check.stderr||check.stdout);
   assert.match(check.stdout,/完整性檢查正常/);
-  assert.doesNotMatch(check.stdout,/a-test-only-strong-password/);
-  assert.ok(fs.existsSync(path.join(root,'data','business.sqlite')));
+  assert.doesNotMatch(check.stdout,/APP_ADMIN_PASSWORD=/);
+  assert.ok(fs.existsSync(path.join(root,'data','plumber.sqlite')));
   if(process.platform==='win32'){
    const {execFileSync}=require('node:child_process');
    const envPath=path.join(root,'.env');
@@ -119,4 +121,54 @@ test('owner config prevents recursive ACL changes outside the dedicated data fol
   '\\\\server\\share\\file.sqlite','C:\\Users\\Public\\database.sqlite','./backups/backup.sqlite','./data/not-a-db.txt']){
   assert.throws(()=>owner.validateSettings({...config,SQLITE_PATH:danger}),/資料庫|網路磁碟|路徑/);
  }
+});
+
+test('disappeared business database never gets silently recreated by check, backup, start or npm start',()=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'owner-db-missing-'));
+ try{
+  for(const folder of ['tools','lib','db','api'])fs.mkdirSync(path.join(root,folder));
+  const copy=f=>fs.copyFileSync(path.join(__dirname,'..',f),path.join(root,f));
+  for(const file of ['tools/owner-cli.js','lib/sqlite.js','db/schema.sqlite.sql','db/inventory.sql','db/catalog.sql','server.js','api/_auth.js'])copy(file);
+  for(const api of ['status','login','data','inventory','catalog'])
+   fs.writeFileSync(path.join(root,'api',api+'.js'),'module.exports=()=>{};');
+  const env={...process.env,OWNER_NO_BROWSER:'1'};for(const key of ['VERCEL','SQLITE_PATH','APP_ADMIN_PASSWORD','AUTH_SECRET','PORT'])delete env[key];
+  const launch=(args)=>spawnSync(process.execPath,args,{cwd:root,env,encoding:'utf8',timeout:15000});
+  const install=launch(['-e',"require('./tools/owner-cli.js').prerequisite(true)"]);
+  assert.equal(install.status,0,install.stderr||install.stdout);
+  const databasePath=path.join(root,'data','plumber.sqlite');
+  assert.ok(fs.statSync(databasePath).size>0);
+  const initialBackup=launch(['tools/owner-cli.js','backup']);
+  assert.equal(initialBackup.status,0,initialBackup.stderr||initialBackup.stdout);
+  const before=fs.readdirSync(path.join(root,'backups')).length;
+  const movedPath=databasePath+'.recovery-test';
+  fs.renameSync(databasePath,movedPath);
+  for(const command of ['check','backup','start']){
+   const result=launch(['tools/owner-cli.js',command]);
+   assert.notEqual(result.status,0,'Missing DB must fail '+command);
+   assert.match(result.stderr,/\[錯誤 E_DB\]/,result.stderr);
+   assert.equal(fs.existsSync(databasePath),false,'No empty database created by '+command);
+  }
+  assert.equal(fs.readdirSync(path.join(root,'backups')).length,before,'Backup must not archive an empty replacement');
+  const direct=launch(['--env-file=.env','server.js']);
+  assert.notEqual(direct.status,0);
+  assert.match(direct.stderr,/\[E_DB\]/);
+  assert.equal(fs.existsSync(databasePath),false);
+  fs.renameSync(movedPath,databasePath);
+  assert.equal(launch(['tools/owner-cli.js','check']).status,0,'Restoring the original database should work');
+ }finally{fs.rmSync(root,{recursive:true,force:true,maxRetries:14,retryDelay:200})}
+});
+test('zero-byte database and missing database plus WAL remnants both fail closed',()=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'owner-db-invalid-'));
+ const config={databasePath:path.join(root,'data','database.sqlite')};
+ try{
+  fs.mkdirSync(path.dirname(config.databasePath));
+  assert.throws(()=>owner.assertDatabasePresent(config),/原本設定|資料庫不見了/);
+  fs.writeFileSync(config.databasePath,'');
+  assert.throws(()=>owner.assertDatabasePresent(config),/0 位元組/);
+  fs.unlinkSync(config.databasePath);
+  fs.writeFileSync(config.databasePath+'-wal','old partial WAL');
+  assert.throws(()=>owner.assertDatabasePresent(config,true),/WAL\/SHM/);
+  fs.unlinkSync(config.databasePath+'-wal');
+  assert.equal(owner.assertDatabasePresent(config,true),false,'Only explicit same-run bootstrap is allowed');
+ }finally{fs.rmSync(root,{recursive:true,force:true,maxRetries:14,retryDelay:200})}
 });

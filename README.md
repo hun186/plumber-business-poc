@@ -24,9 +24,9 @@
 Node.js **22.13+**，不需要 PostgreSQL、Docker 或額外 npm 套件。
 
 ```bash
-cp .env.example .env
-# 編輯 .env：請自訂長管理密碼與 32 字元以上亂數 AUTH_SECRET
-npm start
+# 安全首次部署：由工具自動產生 .env 與 SQLite，不要手動複製範例作正式資料庫
+node tools/owner-cli.js start
+# 已有資料庫及 .env 的後續啟動，可使用 npm start
 # 在同一台主機打開 http://127.0.0.1:3000
 ```
 
@@ -38,7 +38,7 @@ APP_ADMIN_PASSWORD=<自行設定高強度密碼>
 AUTH_SECRET=<至少32個隨機字元>
 ```
 
-- `.env` **不可**提交 GitHub；SQLite 自動初始化在 `SQLITE_PATH` 指定位置，`data/`、`*.sqlite`、`*.sqlite-wal` 等已列入 `.gitignore`。
+- `.env` **不可**提交 GitHub；只有全新部署且本次執行剛自動建立 `.env` 時才允許第一次建立 SQLite。若既有 `.env` 卻遺失資料庫、或資料庫為空檔，所有啟動／檢查／備份必須報 `E_DB`，不得產生空白替代資料庫。既有資料請從已驗證的備份還原。`data/`、`*.sqlite`、`*.sqlite-wal` 已列入 `.gitignore`。
 - 為避免未加密傳輸管理密碼，本機伺服器只綁定 `127.0.0.1`；若部署給其他人，必須另外由 HTTPS 反向代理接入，設置存取控制、備份及還原策略。
 - 修改 SQLite 資料表請採版本化遷移；本版本已移除舊 PostgreSQL 建表腳本，僅使用 `db/schema.sqlite.sql`。
 

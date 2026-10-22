@@ -273,7 +273,7 @@ test('SQLite database symlinks are blocked before startup or ACL access',()=>{
   fs.symlinkSync(outside,path.join(dir,'plumber.sqlite'));
   const configuration={databasePath:path.join(dir,'plumber.sqlite')};
   assert.throws(()=>owner.assertDatabasePresent(configuration),/符號連結/);
-  assert.throws(()=>owner.secureDatabaseStorage(configuration),/不是安全的實體檔案/);
+  assert.throws(()=>owner.secureDatabaseStorage(configuration),/專用 data 目錄/); // This test folder is outside the application root; path confinement rejects it first.
   const verified=new DatabaseSync(outside,{readOnly:true});
   try{assert.ok(verified.prepare("SELECT name FROM sqlite_master WHERE name='customers'").get())}
   finally{verified.close()}

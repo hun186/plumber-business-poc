@@ -168,15 +168,17 @@ function verifyEstablishedSchema(conf,allowFirstInstall=false){
   if(catalog.some(t=>tables.has(t))&&!inventory.every(t=>tables.has(t)))
    fail('E_DB','工項資料存在但倉儲基礎資料遺失，已停止升級');
   const required={
-   customers:['id','name'],projects:['id','customer_id','title','amount'],
-   quotes:['id','number','project_id','customer_id','items'],
-   payments:['id','project_id','paid_date','amount'],
-   costs:['id','project_id','cost_date','category','amount'],
-   inventory_items:['id','sku','name','unit','unit_cost'],
-   inventory_movements:['id','item_id','kind','qty','unit_cost'],
-   material_requirements:['id','project_id','item_id','planned_qty'],
-   work_templates:['id','name','kind','default_qty','unit_price','materials'],
-   quote_material_plans:['project_id','item_id','quote_id','planned_qty']
+   customers:['id','name','phone','address','email','note','created_at'],
+   projects:['id','customer_id','title','type','status','start_date','due_date','amount','note','created_at'],
+   quotes:['id','number','project_id','customer_id','quote_date','status','tax_rate','items','note','created_at'],
+   payments:['id','project_id','paid_date','amount','note','created_at'],
+   costs:['id','project_id','cost_date','category','amount','note','created_at'],
+   inventory_items:['id','sku','name','unit','unit_cost','alert_qty','note','created_at'],
+   inventory_movements:['id','item_id','project_id','move_date','kind','qty','unit_cost','note','created_at'],
+   material_requirements:['id','project_id','item_id','planned_qty','note','created_at'],
+   work_templates:['id','parent_id','kind','name','unit','default_qty','unit_price','materials','note','created_at'],
+   quote_material_plans:['project_id','item_id','quote_id','planned_qty'],
+   backup_settings:['id','interval_days','retention_count','last_auto_at','last_error','updated_at']
   };
   for(const [table,columns] of Object.entries(required)){
    if(!tables.has(table))continue;

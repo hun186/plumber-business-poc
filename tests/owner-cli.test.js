@@ -244,3 +244,19 @@ test('valid v0.2 core-only SQLite preserves business data across additive v0.3 a
   }finally{migrated.close()}
  }finally{fs.rmSync(root,{recursive:true,force:true,maxRetries:14,retryDelay:200})}
 });
+
+test('missing runtime-required SQLite customer phone column is rejected before any migration',()=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'owner-missing-column-'));
+ try{
+  const file=path.join(root,'before.sqlite');
+  const {DatabaseSync}=require('node:sqlite'),db=new DatabaseSync(file);
+  db.exec(fs.readFileSync(path.join(__dirname,'../db/schema.sqlite.sql'),'utf8'));
+  db.exec('ALTER TABLE customers DROP COLUMN phone');db.close();
+  assert.throws(()=>owner.verifyEstablishedSchema({databasePath:file}),/customers.*phone/);
+  const unchanged=new DatabaseSync(file,{readOnly:true});
+  try{
+   assert.equal(unchanged.prepare("SELECT COUNT(*) AS n FROM pragma_table_info('customers') WHERE name='phone'").get().n,0);
+   assert.equal(unchanged.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name='costs'").get().n,1);
+  }finally{unchanged.close()}
+ }finally{fs.rmSync(root,{recursive:true,force:true,maxRetries:14,retryDelay:200})}
+});

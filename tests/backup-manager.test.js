@@ -181,3 +181,28 @@ test('colliding backup names never delete a previously verified database',()=>{
   assert.equal(x.locks,0);
  }finally{fs.rmSync(root,{recursive:true,force:true,maxRetries:15,retryDelay:200})}
 });
+
+test('automatic retention failure remains visible while preserving verified new and old backups',()=>{
+ const root=fixture();
+ try{
+  const x=call(root,`
+   require('./tools/owner-cli').prerequisite(true);
+   const fs=require('node:fs'),manager=require('./lib/backup-manager'),db=require('./lib/sqlite').connection();
+   manager.saveSettings({intervalDays:1,retentionCount:1},db);
+   const first=manager.makeBackup('auto',new Date('2026-10-19T12:00:00Z'),db);
+   const original=fs.unlinkSync;
+   fs.unlinkSync=function(file,...rest){
+    if(String(file).endsWith(first.name))throw Object.assign(new Error('simulated locked old file'),{code:'EPERM'});
+    return original.call(this,file,...rest);
+   };
+   const second=manager.makeBackup('auto',new Date('2026-10-20T12:01:00Z'),db);
+   fs.unlinkSync=original;
+   const status=manager.status(db);
+   console.log(JSON.stringify({second:second.name,first:first.name,remaining:status.backups.map(x=>x.name),lastError:status.lastError}));
+  `);
+  assert.ok(x.remaining.includes(x.first));
+  assert.ok(x.remaining.includes(x.second));
+  assert.match(x.lastError,/清理失敗/);
+  assert.match(x.lastError,/EPERM/);
+ }finally{fs.rmSync(root,{recursive:true,force:true,maxRetries:15,retryDelay:200})}
+});

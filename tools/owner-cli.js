@@ -172,8 +172,15 @@ function verifyEstablishedSchema(conf,allowFirstInstall=false){
   const baseTables=['customers','projects','quotes','payments','costs'];
   for(const table of baseTables)if(!tables.has(table))
    fail('E_DB','既有資料庫缺少核心資料表 '+table+'，可能有資料遺失；拒絕自動補建空表');
-  // v0.2 -> v0.3 -> v0.4: additive upgrades are allowed only from
-  // complete known prior schemas; half-installed components are rejected.
+  // SQLite user_version is the durable installed schema marker. A versioned
+  // database must not silently reconstruct a whole missing additive group.
+  const version=reader.prepare('PRAGMA user_version').get().user_version;
+  if(!Number.isInteger(version)||version<0||version>5||version===1)
+   fail('E_DB','無法辨識資料庫版本標記，拒絕自動升級');
+  // Unversioned v0.4 databases predate our marker and may add only the
+  // new backup_settings table automatically. Genuine v0.2/v0.3 files need
+  // an explicit, one-time administrator legacy-upgrade authorization.
+  const authorized=process.env.OWNER_ALLOW_LEGACY_UPGRADE==='1';
   const inventory=['inventory_items','inventory_movements','material_requirements'];
   const catalog=['work_templates','quote_material_plans'];
   for(const [label,group] of [['v0.3 倉儲',inventory],['v0.4 工項',catalog]]){
@@ -183,6 +190,16 @@ function verifyEstablishedSchema(conf,allowFirstInstall=false){
   }
   if(catalog.some(t=>tables.has(t))&&!inventory.every(t=>tables.has(t)))
    fail('E_DB','工項資料存在但倉儲基礎資料遺失，已停止升級');
+  if(version>=3&&!inventory.every(t=>tables.has(t)))
+   fail('E_DB','既有 v0.3 以上資料庫遺失整組倉儲資料表，拒絕補建空表');
+  if(version>=4&&!catalog.every(t=>tables.has(t)))
+   fail('E_DB','既有 v0.4 以上資料庫遺失整組工項資料表，拒絕補建空表');
+  if(version>=5&&!tables.has('backup_settings'))
+   fail('E_DB','既有 v0.5 資料庫遺失備份設定表，拒絕補建');
+  if(version===0&&(!inventory.every(t=>tables.has(t))||!catalog.every(t=>tables.has(t)))){
+   if(tables.has('backup_settings')||!authorized)
+    fail('E_DB','未標記版本且缺少新版資料表，無法區分合法舊版與資料遺失。請先備份，再由交付人員明確授權舊版升級');
+  }
   const required={
    customers:['id','name','phone','address','email','note','created_at'],
    projects:['id','customer_id','title','type','status','start_date','due_date','amount','note','created_at'],
@@ -202,6 +219,24 @@ function verifyEstablishedSchema(conf,allowFirstInstall=false){
    for(const col of columns)if(!actual.has(col))
     fail('E_DB','既有資料表 '+table+' 缺少必要欄位 '+col+'；不能自動升級');
   }
+  // Validate the authoritative table and index definitions, including
+  // PRIMARY KEY, NOT NULL, UNIQUE, foreign keys and CHECK expressions.
+  // Replaying CREATE IF NOT EXISTS would never restore missing constraints.
+  const canonical=new DatabaseSync(':memory:');
+  try{
+   for(const file of ['schema.sqlite.sql','inventory.sql','catalog.sql','backup.sql'])
+    canonical.exec(fs.readFileSync(path.join(projectRoot,'db',file),'utf8'));
+   const cleanSql=s=>String(s).replace(/\bIF\s+NOT\s+EXISTS\b/gi,'').replace(/\s+/g,' ').trim();
+   const standard=canonical.prepare("SELECT type,name,tbl_name,sql FROM sqlite_master WHERE type IN ('table','index') AND sql IS NOT NULL").all();
+   const lookup=reader.prepare("SELECT type,name,tbl_name,sql FROM sqlite_master WHERE type IN ('table','index') AND sql IS NOT NULL");
+   const actual=new Map(lookup.all().map(x=>[x.type+':'+x.name,x]));
+   for(const reference of standard){
+    if(!tables.has(reference.tbl_name))continue; // Additive version not installed yet.
+    const seen=actual.get(reference.type+':'+reference.name);
+    if(!seen||cleanSql(seen.sql)!==cleanSql(reference.sql))
+     fail('E_DB','既有資料表或索引約束不符合正式結構：'+reference.name+'（請先由交付人員檢查資料）');
+   }
+  }finally{canonical.close()}
   const fk=reader.prepare('PRAGMA foreign_key_check').all();
   if(fk.length)fail('E_DB','既有資料庫外鍵關聯檢查失敗（'+fk.length+' 項）');
   return true;

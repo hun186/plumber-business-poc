@@ -210,9 +210,9 @@ test('automatic retention failure remains visible while preserving verified new 
 test('backup Worker cannot recreate a deployed database missing after initial boot',()=>{
  const root=fixture();
  try{
+  call(root,"require('./tools/owner-cli').prerequisite(true);console.log(JSON.stringify({installed:true}))");
   const output=call(root,`
    const fs=require('node:fs'),path=require('node:path');
-   require('./tools/owner-cli').prerequisite(true);
    const file=path.join(process.cwd(),'data','plumber.sqlite');
    fs.renameSync(file,file+'.saved');
    const backup=require('./lib/backup-manager');

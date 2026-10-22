@@ -50,7 +50,9 @@ function restrictWindowsAcl(target,recursive=false){
   const who=execFileSync('whoami.exe',['/user','/fo','csv','/nh'],{encoding:'utf8',windowsHide:true});
   const sid=who.match(/S-1-\d+(?:-\d+)+/)?.[0];
   if(!sid)fail('E_PATH','無法讀取 Windows 使用者安全識別碼');
-  const args=[target,'/inheritance:r','/grant:r','*'+sid+':(F)','*S-1-5-18:(F)','*S-1-5-32-544:(F)'];
+  const access=recursive?':(OI)(CI)F':':(F)';
+  const args=[target,'/inheritance:r','/grant:r','*'+sid+access,
+   '/grant:r','*S-1-5-18'+access,'/grant:r','*S-1-5-32-544'+access];
   if(recursive)args.push('/T');
   execFileSync('icacls.exe',args,{encoding:'utf8',windowsHide:true,timeout:30000});
  }catch(e){if(e.ownerCode)throw e;fail('E_PATH','設定 Windows 私密檔案存取權限失敗（'+(e.code||e.name)+'）')}

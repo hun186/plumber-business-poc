@@ -5,7 +5,7 @@ const {spawnSync}=require('node:child_process');
 function fixture(){
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'owner-history-'));
  for(const dir of ['lib','db','tools','api'])fs.mkdirSync(path.join(root,dir));
- for(const f of ['lib/sqlite.js','lib/backup-manager.js','tools/owner-cli.js','db/schema.sqlite.sql','db/inventory.sql','db/catalog.sql','db/backup.sql','api/_auth.js','api/backups.js'])
+ for(const f of ['lib/sqlite.js','lib/backup-manager.js','lib/backup-worker.js','tools/owner-cli.js','db/schema.sqlite.sql','db/inventory.sql','db/catalog.sql','db/backup.sql','api/_auth.js','api/backups.js'])
   fs.copyFileSync(path.join(__dirname,'..',f),path.join(root,f));
  return root;
 }
@@ -124,4 +124,60 @@ test('backup management page renders full configuration and escapes user-visible
  assert.match(main.innerHTML,/不能直接在運作中的網站覆蓋資料庫/);
  ctx.state.server=false;
  assert.match(ui.render(),/展示模式無法建立可還原的備份/);
+});
+
+test('an async SQLite worker lets the HTTP event loop advance before the backup finishes',()=>{
+ const root=fixture();
+ try{
+  const x=call(root,`
+   require('./tools/owner-cli').prerequisite(true);
+   const manager=require('./lib/backup-manager');
+   (async()=>{
+    const pending=manager.makeBackupAsync('manual');
+    let advanced=false;
+    await new Promise(done=>setImmediate(()=>{advanced=true;done()}));
+    const result=await pending;
+    console.log(JSON.stringify({advanced,name:result.name,count:manager.items().length}));
+   })().catch(error=>{console.error(error);process.exitCode=1});
+  `);
+  assert.equal(x.advanced,true);
+  assert.equal(x.count,1);
+  assert.match(x.name,/-manual\.sqlite$/);
+ }finally{fs.rmSync(root,{recursive:true,force:true,maxRetries:15,retryDelay:200})}
+});
+test('CLI backup rejects a linked backup directory without writing outside the project',()=>{
+ if(process.platform==='win32')return;
+ const root=fixture(),other=fs.mkdtempSync(path.join(os.tmpdir(),'owner-outside-'));
+ try{
+  call(root,"require('./tools/owner-cli').prerequisite(true);console.log(JSON.stringify({ready:true}))");
+  fs.symlinkSync(other,path.join(root,'backups'),'dir');
+  const env={...process.env};for(const k of ['VERCEL','SQLITE_PATH','APP_ADMIN_PASSWORD','AUTH_SECRET'])delete env[k];
+  const result=spawnSync(process.execPath,['tools/owner-cli.js','backup'],{cwd:root,env,encoding:'utf8',timeout:12000});
+  assert.notEqual(result.status,0);
+  assert.match(result.stderr,/E_BACKUP/);
+  assert.equal(fs.readdirSync(other).length,0);
+ }finally{fs.rmSync(root,{recursive:true,force:true,maxRetries:15,retryDelay:200});fs.rmSync(other,{recursive:true,force:true})}
+});
+test('colliding backup names never delete a previously verified database',()=>{
+ const root=fixture();
+ try{
+  const x=call(root,`
+   require('./tools/owner-cli').prerequisite(true);
+   const path=require('node:path'),fs=require('node:fs'),crypto=require('node:crypto');
+   const backups=require('./lib/backup-manager');
+   const now=new Date('2026-10-22T12:22:30Z');
+   const initial=crypto.randomBytes;
+   crypto.randomBytes=(n,...args)=>n===3?Buffer.from('001122','hex'):initial(n,...args);
+   const first=backups.makeBackup('manual',now);
+   const saved=fs.readFileSync(path.join(process.cwd(),'backups',first.name));
+   let error='';
+   try{backups.makeBackup('manual',now)}catch(e){error=e.code}
+   const intact=fs.readFileSync(path.join(process.cwd(),'backups',first.name)).equals(saved);
+   console.log(JSON.stringify({error,intact,count:backups.items().length,locks:fs.readdirSync('backups').filter(x=>x.endsWith('.lock')).length}));
+  `);
+  assert.equal(x.error,'E_BACKUP');
+  assert.equal(x.intact,true);
+  assert.equal(x.count,1);
+  assert.equal(x.locks,0);
+ }finally{fs.rmSync(root,{recursive:true,force:true,maxRetries:15,retryDelay:200})}
 });

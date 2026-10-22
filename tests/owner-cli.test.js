@@ -27,7 +27,7 @@ test('a clean owner folder passes diagnostics and creates a verified VACUUM back
  try{
   for(const folder of ['tools','lib','db'])fs.mkdirSync(path.join(root,folder));
   const copy=file=>fs.copyFileSync(path.join(__dirname,'..',file),path.join(root,file));
-  for(const file of ['tools/owner-cli.js','lib/sqlite.js','db/schema.sqlite.sql','db/inventory.sql','db/catalog.sql','db/backup.sql'])copy(file);
+  for(const file of ['tools/owner-cli.js','lib/sqlite.js','lib/backup-manager.js','lib/backup-worker.js','db/schema.sqlite.sql','db/inventory.sql','db/catalog.sql','db/backup.sql'])copy(file);
   const env={...process.env,OWNER_NO_BROWSER:'1',OWNER_ACL_DEBUG:'1'};delete env.VERCEL;
   const call=cmd=>spawnSync(process.execPath,['tools/owner-cli.js',cmd],{cwd:root,env,encoding:'utf8',timeout:15000});
   const setup=spawnSync(process.execPath,['-e',"require('./tools/owner-cli.js').prerequisite(true)"],{cwd:root,env,encoding:'utf8',timeout:15000});

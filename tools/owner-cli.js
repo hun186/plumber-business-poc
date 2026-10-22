@@ -3,7 +3,6 @@
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
 const {spawn,execFileSync}=require('node:child_process');
 const projectRoot=path.resolve(__dirname,'..');
-process.chdir(projectRoot);
 const envFile=path.join(projectRoot,'.env');
 const help={
  E_NODE:'請到 https://nodejs.org/en/download 安裝 Node.js LTS（建議 v24，最低 v22.13），完成後重開視窗。',
@@ -257,6 +256,7 @@ function errorReport(e){
  console.error('回報時請提供錯誤代碼及畫面截圖，切勿提供管理密碼或 .env。');
 }
 async function execute(command=process.argv[2]){
+ process.chdir(projectRoot);
  if(!['start','check','backup'].includes(command))fail('E_USAGE','不支援的命令：'+String(command||'未指定'));
  console.log('水電好管家｜業主部署助手');
  const config=prerequisite(command==='start');
@@ -275,5 +275,5 @@ async function execute(command=process.argv[2]){
   require('../lib/backup-manager').startScheduler();
  });
 }
-if(require.main===module)execute().catch(e=>{errorReport(e);process.exitCode=1});
 module.exports={versionOk,parseSettings,validateSettings,createFirstTimeConfig,restrictWindowsAcl,secureDatabaseStorage,assertDatabasePresent,verifyEstablishedSchema,prerequisite,stamp,help};
+if(require.main===module)execute().catch(e=>{errorReport(e);process.exitCode=1});

@@ -334,3 +334,34 @@ test('backup Worker refuses changed .env SQLite path instead of opening another 
   assert.equal(result.hasOther,false);
  }finally{fs.rmSync(root,{recursive:true,force:true,maxRetries:15,retryDelay:200})}
 });
+
+test('existing Windows backup folder ACL is reprotected before history listing and download',()=>{
+ if(process.platform!=='win32')return;
+ const root=fixture();
+ try{
+  const outcome=call(root,`
+   require('./tools/owner-cli').prerequisite(true);
+   const cp=require('node:child_process'),b=require('./lib/backup-manager');
+   const snapshot=b.makeBackup('manual');
+   const folder='backups';
+   const everyone=/S-1-1-0|Everyone|所有人/i;
+   function inject(){cp.execFileSync('icacls.exe',[folder,'/grant','*S-1-1-0:(OI)(CI)(F)'],{windowsHide:true})}
+   function acl(){return cp.execFileSync('icacls.exe',[folder],{encoding:'utf8',windowsHide:true})}
+   inject();
+   const before=everyone.test(acl());
+   const list=b.items();
+   const afterList=!everyone.test(acl());
+   inject();
+   const again=everyone.test(acl());
+   const download=b.safeFile(snapshot.name);
+   const afterDownload=!everyone.test(acl());
+   console.log(JSON.stringify({before,afterList,again,afterDownload,found:list.some(x=>x.name===snapshot.name),size:download.size}));
+  `);
+  assert.equal(outcome.before,true);
+  assert.equal(outcome.afterList,true,'Listing must harden the existing directory ACL');
+  assert.equal(outcome.again,true);
+  assert.equal(outcome.afterDownload,true,'Downloading must harden the directory ACL');
+  assert.equal(outcome.found,true);
+  assert.ok(outcome.size>0);
+ }finally{fs.rmSync(root,{recursive:true,force:true,maxRetries:15,retryDelay:200})}
+});

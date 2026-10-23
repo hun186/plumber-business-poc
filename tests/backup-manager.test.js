@@ -365,3 +365,60 @@ test('existing Windows backup folder ACL is reprotected before history listing a
   assert.ok(outcome.size>0);
  }finally{fs.rmSync(root,{recursive:true,force:true,maxRetries:15,retryDelay:200})}
 });
+
+test('stale interrupted backup files are safely reaped; active, recent, unrelated and published data survive',()=>{
+ const root=fixture();
+ try{
+  const result=call(root,`
+   require('./tools/owner-cli').prerequisite(true);
+   const fs=require('node:fs'),path=require('node:path'),b=require('./lib/backup-manager');
+   const published=b.makeBackup('manual'),folder=path.join(process.cwd(),'backups');
+   const old=new Date(Date.now()-3*60*60*1000);
+   function orphan(suffix,pid,age=old,includeLock=true){
+    const base='plumber-backup-20261022-120000-'+suffix+'-manual.sqlite';
+    const lock=path.join(folder,base+'.lock'),part=path.join(folder,base+'.partial');
+    if(includeLock){fs.writeFileSync(lock,JSON.stringify({pid}));fs.utimesSync(lock,age,age)}
+    fs.writeFileSync(part,'interrupted sqlite data');fs.utimesSync(part,age,age);
+    return {lock,part};
+   }
+   const crashed=orphan('aabbcc',99999999);
+   const active=orphan('ddeeff',process.pid);
+   const recent=orphan('001122',99999999,new Date());
+   const claimless=orphan('334455',null,new Date(Date.now()-48*60*60*1000),false);
+   const foreign=path.join(folder,'someone-else.partial');fs.writeFileSync(foreign,'foreign file');
+   const expected=fs.readFileSync(path.join(folder,published.name));
+   const removed=b.reclaimAbandoned(),history=b.items();
+   console.log(JSON.stringify({removed,crashedGone:!fs.existsSync(crashed.lock)&&!fs.existsSync(crashed.part),claimlessGone:!fs.existsSync(claimless.part),activeRetained:fs.existsSync(active.lock)&&fs.existsSync(active.part),recentRetained:fs.existsSync(recent.lock)&&fs.existsSync(recent.part),foreignRetained:fs.existsSync(foreign),publishedIntact:fs.readFileSync(path.join(folder,published.name)).equals(expected),historyCount:history.length}));
+  `);
+  assert.equal(result.removed,3);
+  assert.equal(result.crashedGone,true);
+  assert.equal(result.claimlessGone,true);
+  assert.equal(result.activeRetained,true);
+  assert.equal(result.recentRetained,true);
+  assert.equal(result.foreignRetained,true);
+  assert.equal(result.publishedIntact,true);
+  assert.equal(result.historyCount,1);
+ }finally{fs.rmSync(root,{recursive:true,force:true,maxRetries:15,retryDelay:200})}
+});
+test('old-format empty backup locks require longer grace than PID-tagged claims',()=>{
+ const root=fixture();
+ try{
+  const result=call(root,`
+   require('./tools/owner-cli').prerequisite(true);
+   const fs=require('node:fs'),path=require('node:path'),b=require('./lib/backup-manager');
+   fs.mkdirSync('backups',{recursive:true});
+   const lock=path.join('backups','plumber-backup-20261022-120000-aabbcc-auto.sqlite.lock');
+   fs.writeFileSync(lock,'');
+   const twoHoursOld=new Date(Date.now()-2*60*60*1000);
+   fs.utimesSync(lock,twoHoursOld,twoHoursOld);
+   const early=b.reclaimAbandoned();
+   const twoDaysOld=new Date(Date.now()-48*60*60*1000);
+   fs.utimesSync(lock,twoDaysOld,twoDaysOld);
+   const late=b.reclaimAbandoned();
+   console.log(JSON.stringify({early,late,remains:fs.existsSync(lock)}));
+  `);
+  assert.equal(result.early,0);
+  assert.equal(result.late,1);
+  assert.equal(result.remains,false);
+ }finally{fs.rmSync(root,{recursive:true,force:true,maxRetries:15,retryDelay:200})}
+});

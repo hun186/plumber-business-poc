@@ -27,4 +27,5 @@ test('GitHub handoff contains both a valid Word archive and the source Markdown 
   assert.ok(md.includes(phrase)&&xml.includes(phrase),'Both guides should cover: '+phrase);
  assert.match(xml,/<w:tbl>/,'SOP error matrix should be an editable Word table');
  assert.ok(xml.includes('127.0.0.1:3000'),'The owner manual includes the localhost address');
+ assert.ok(md.includes('plumber.sqlite-wal')&&md.includes('plumber.sqlite-shm'),'Markdown restore SOP must preserve and remove stale SQLite WAL/SHM as a set');
 });

@@ -44,6 +44,8 @@
 - `GET /api/backups`：認證後回間隔、保留份數、最後狀態、歷史清單；`GET /api/backups?file=<受管檔名>` 下載已發布 SQLite 副本。
 - `POST /api/backups` 以 `action=save`（`intervalDays` 1–365，`retentionCount` 1–500）、`create` 或 `delete`（`name`）修改設定／建立手動備份／刪除備份。
 - 只接受符合 `plumber-backup-日期-隨機碼-(auto|manual).sqlite` 管理規則的檔名；下載不提供線上還原。
+- 自動備份到期時，與最後一份可用的自動備份比對實際業務資料表／schema／`user_version`；排程設定表 `backup_settings` 不列入資料變更判定。若內容一致，僅更新排程檢查時間、不產生檔案；沒有可驗證的自動基線時建立新備份。手動備份不受相同內容跳過限制。
+- `last_auto_at` 的實際語意為「上次成功完成自動排程檢查／備份時間」而非必然產生一份備份的時間；備份檔案產生時間應查歷史清單。
 - `VACUUM INTO` 產出後執行完整性、FK 與業務表驗證；只對已發布備份做清單及保留份數管理，手動備份不被自動排程裁減。
 
 ## CT-004：業主 CLI

@@ -28,8 +28,10 @@ test('daily default, persisted settings, auto retention and manual backup histor
    const manual=b.makeBackup('manual',new Date('2026-10-18T12:00:00Z'),db);
    const first=b.autoOnce(new Date('2026-10-19T00:00:00Z'),db);
    const skipped=b.autoOnce(new Date('2026-10-19T18:00:00Z'),db);
+   db.prepare("UPDATE customers SET name='首次異動' WHERE id='proof'").run();
    b.autoOnce(new Date('2026-10-20T00:01:00Z'),db);
    b.saveSettings({intervalDays:2,retentionCount:2},db);
+   db.prepare("UPDATE customers SET name='重要客戶' WHERE id='proof'").run();
    const third=b.autoOnce(new Date('2026-10-22T00:02:00Z'),db);
    const {DatabaseSync}=require('node:sqlite');
    const x=new DatabaseSync(path.join(process.cwd(),'backups',third.name),{readOnly:true});
@@ -112,6 +114,8 @@ test('backup management page renders full configuration and escapes user-visible
  const ui=vm.runInNewContext(html+'\nBackupUI;',ctx);
  assert.match(ui.render(),/備份管理/);
  assert.match(ui.render(),/系統服務執行期間/);
+ assert.match(ui.render(),/逾期會補做一次自動備份檢查/);
+ assert.match(ui.render(),/業務資料沒有變更，會略過建立備份檔/);
  ui.bind();
  await new Promise(resolve=>setImmediate(resolve));
  assert.match(main.innerHTML,/備份間隔（天）/);
@@ -190,6 +194,7 @@ test('automatic retention failure remains visible while preserving verified new 
    const fs=require('node:fs'),manager=require('./lib/backup-manager'),db=require('./lib/sqlite').connection();
    manager.saveSettings({intervalDays:1,retentionCount:1},db);
    const first=manager.makeBackup('auto',new Date('2026-10-19T12:00:00Z'),db);
+   db.prepare("INSERT INTO customers(id,name) VALUES('after-first','新增資料')").run();
    const original=fs.unlinkSync;
    fs.unlinkSync=function(file,...rest){
     if(String(file).endsWith(first.name))throw Object.assign(new Error('simulated locked old file'),{code:'EPERM'});
@@ -254,6 +259,7 @@ test('editing retention reports persisted setting and cleanup error if old backu
    const fs=require('node:fs'),manager=require('./lib/backup-manager'),db=require('./lib/sqlite').connection();
    manager.saveSettings({intervalDays:1,retentionCount:2},db);
    const first=manager.makeBackup('auto',new Date('2026-10-19T12:00:00Z'),db);
+   db.prepare("INSERT INTO customers(id,name) VALUES('second-version','變更過')").run();
    manager.makeBackup('auto',new Date('2026-10-20T12:00:00Z'),db);
    const original=fs.unlinkSync;
    fs.unlinkSync=function(file,...rest){
@@ -459,5 +465,97 @@ test('scheduler reclaims stranded claims on startup but does not rescan ACL on e
   assert.equal(result.firstScanCount,1,'Startup must still reclaim pending files');
   assert.equal(result.afterTicks,1,'Periodic due-date ticks must not trigger ACL/file rescans');
   assert.equal(result.intervalMs,60000);
+ }finally{fs.rmSync(root,{recursive:true,force:true,maxRetries:15,retryDelay:200})}
+});
+
+test('unchanged business contents skip due auto backups, advance due date, and preserve manual snapshots',()=>{
+ const root=fixture();
+ try{
+  const result=call(root,`
+   require('./tools/owner-cli').prerequisite(true);
+   const fs=require('node:fs'),b=require('./lib/backup-manager'),db=require('./lib/sqlite').connection();
+   const first=b.autoOnce(new Date('2026-10-19T00:00:00Z'),db);
+   const original=fs.readFileSync('backups/'+first.name);
+   const second=b.autoOnce(new Date('2026-10-20T00:00:01Z'),db);
+   b.saveSettings({intervalDays:1,retentionCount:1},db);
+   const manual=b.makeBackup('manual',new Date('2026-10-20T12:00:00Z'),db);
+   const third=b.autoOnce(new Date('2026-10-21T00:00:02Z'),db);
+   const status=b.status(db);
+   console.log(JSON.stringify({first:first.name,second,third,manual:manual.name,history:status.backups.map(x=>({name:x.name,type:x.type})),lastAutoAt:status.lastAutoAt,nextDueAt:status.nextDueAt,originalIntact:fs.readFileSync('backups/'+first.name).equals(original)}));
+  `);
+  assert.equal(result.second.skipped,true);
+  assert.equal(result.second.reason,'unchanged');
+  assert.equal(result.third.skipped,true);
+  assert.equal(result.lastAutoAt,'2026-10-21T00:00:02.000Z');
+  assert.equal(result.nextDueAt,'2026-10-22T00:00:02.000Z');
+  assert.equal(result.originalIntact,true);
+  assert.equal(result.history.filter(x=>x.type==='auto').length,1);
+  assert.equal(result.history.filter(x=>x.type==='manual').length,1);
+  assert.ok(result.history.some(x=>x.name===result.first));
+  assert.ok(result.history.some(x=>x.name===result.manual));
+ }finally{fs.rmSync(root,{recursive:true,force:true,maxRetries:15,retryDelay:200})}
+});
+test('auto backup detects inserts, in-place edits, and deletes instead of comparing only row counts',()=>{
+ const root=fixture();
+ try{
+  const result=call(root,`
+   require('./tools/owner-cli').prerequisite(true);
+   const db=require('./lib/sqlite').connection(),b=require('./lib/backup-manager');
+   b.saveSettings({intervalDays:1,retentionCount:2},db);
+   const a=b.autoOnce(new Date('2026-10-19T00:00:00Z'),db);
+   db.prepare("INSERT INTO customers(id,name) VALUES('change','最初資料')").run();
+   const b1=b.autoOnce(new Date('2026-10-20T00:01:00Z'),db);
+   db.prepare("UPDATE customers SET name='資料更新' WHERE id='change'").run();
+   const c=b.autoOnce(new Date('2026-10-21T00:02:00Z'),db);
+   db.prepare("DELETE FROM customers WHERE id='change'").run();
+   const d=b.autoOnce(new Date('2026-10-22T00:03:00Z'),db);
+   const items=b.items(),last=items.find(x=>x.name===d.name);
+   const {DatabaseSync}=require('node:sqlite'),reader=new DatabaseSync('backups/'+c.name,{readOnly:true});
+   const edited=reader.prepare("SELECT name FROM customers WHERE id='change'").get();reader.close();
+   console.log(JSON.stringify({names:[a.name,b1.name,c.name,d.name],edited,autoCount:items.filter(x=>x.type==='auto').length,last:last?.name}));
+  `);
+  assert.equal(new Set(result.names).size,4);
+  assert.equal(result.edited.name,'資料更新');
+  assert.equal(result.autoCount,2);
+  assert.equal(result.last,result.names[3]);
+ }finally{fs.rmSync(root,{recursive:true,force:true,maxRetries:15,retryDelay:200})}
+});
+test('a deleted or invalid automatic baseline cannot suppress a new verified auto backup',()=>{
+ const root=fixture();
+ try{
+  const result=call(root,`
+   require('./tools/owner-cli').prerequisite(true);
+   const fs=require('node:fs'),b=require('./lib/backup-manager'),db=require('./lib/sqlite').connection();
+   const first=b.makeBackup('auto',new Date('2026-10-19T00:00:00Z'),db);
+   fs.unlinkSync('backups/'+first.name);
+   const second=b.autoOnce(new Date('2026-10-20T00:01:00Z'),db);
+   fs.writeFileSync('backups/'+second.name,'damaged old backup');
+   const third=b.autoOnce(new Date('2026-10-21T00:02:00Z'),db);
+   const {DatabaseSync}=require('node:sqlite'),saved=new DatabaseSync('backups/'+third.name,{readOnly:true});
+   const verified=saved.prepare('PRAGMA quick_check').get().quick_check;saved.close();
+   console.log(JSON.stringify({first:first.name,second:second.name,third:third.name,verified,count:b.items().length,secondSkipped:second.skipped||false,thirdSkipped:third.skipped||false}));
+  `);
+  assert.equal(result.secondSkipped,false);
+  assert.equal(result.thirdSkipped,false);
+  assert.notEqual(result.second,result.third);
+  assert.equal(result.verified,'ok');
+ }finally{fs.rmSync(root,{recursive:true,force:true,maxRetries:15,retryDelay:200})}
+});
+test('async worker follows the same unchanged auto-skip behavior',()=>{
+ const root=fixture();
+ try{
+  const result=call(root,`
+   require('./tools/owner-cli').prerequisite(true);
+   const b=require('./lib/backup-manager');
+   (async()=>{
+    const first=await b.makeBackupAsync('auto');
+    const second=await b.makeBackupAsync('auto');
+    const files=b.items().filter(x=>x.type==='auto');
+    console.log(JSON.stringify({first:first.name,second,count:files.length}));
+   })().catch(error=>{console.error(error);process.exitCode=1});
+  `);
+  assert.equal(result.second.skipped,true);
+  assert.equal(result.count,1);
+  assert.equal(result.second.matchedBackup,result.first);
  }finally{fs.rmSync(root,{recursive:true,force:true,maxRetries:15,retryDelay:200})}
 });

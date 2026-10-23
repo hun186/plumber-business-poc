@@ -32,5 +32,8 @@ test('GitHub handoff contains both a valid Word archive and the source Markdown 
  assert.doesNotMatch(xml,/預設每 1 天自動備份一次|逾期，會補做一份/,'Word manual must not promise a new backup when nothing changed');
  assert.match(xml,/<w:tbl>/,'SOP error matrix should be an editable Word table');
  assert.ok(xml.includes('127.0.0.1:3000'),'The owner manual includes the localhost address');
- assert.ok(md.includes('plumber.sqlite-wal')&&md.includes('plumber.sqlite-shm'),'Markdown restore SOP must preserve and remove stale SQLite WAL/SHM as a set');
+ const readme=fs.readFileSync(path.join(root,'README.md'),'utf8');
+ assert.match(readme,/已過期會補做\*\*一次自動備份檢查\*\*/,'README must not promise a physical backup after an overdue restart');
+ assert.doesNotMatch(readme,/已過期會補做\*\*一份\*\*自動備份/,'README must not retain the outdated guarantee');
+  assert.ok(md.includes('plumber.sqlite-wal')&&md.includes('plumber.sqlite-shm'),'Markdown restore SOP must preserve and remove stale SQLite WAL/SHM as a set');
 });

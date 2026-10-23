@@ -5,7 +5,7 @@ const BackupUI=(()=>{
  function render(){
   return head('backup','資料庫備份管理','管理每日自動備份、歷史版本與手動備份。')+
    (!state.server?'<div class="banner">此頁面需要登入本機 SQLite 正式資料庫；公開展示模式無法建立可還原的備份。</div>':
-   '<div class="backup-note">自動備份會在系統服務執行期間檢查；若電腦關機或關閉啟動視窗，期間不會執行。下次開啟服務後，逾期會補做一次。</div><div id="backup-panel" class="backup-panel"><section class="panel">正在載入備份設定…</section></div>');
+   '<div class="backup-note">自動備份會在系統服務執行期間檢查；若電腦關機或關閉啟動視窗，期間不會執行。下次開啟服務後，逾期會補做一次自動備份檢查；若業務資料沒有變更，會略過建立備份檔。</div><div id="backup-panel" class="backup-panel"><section class="panel">正在載入備份設定…</section></div>');
  }
  async function request(action,body={}){
   const result=await fetch('/api/backups',{method:action?'POST':'GET',headers:{'Content-Type':'application/json'},credentials:'same-origin',...(action?{body:JSON.stringify({action,...body})}:{})});

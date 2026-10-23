@@ -114,6 +114,8 @@ test('backup management page renders full configuration and escapes user-visible
  const ui=vm.runInNewContext(html+'\nBackupUI;',ctx);
  assert.match(ui.render(),/備份管理/);
  assert.match(ui.render(),/系統服務執行期間/);
+ assert.match(ui.render(),/逾期會補做一次自動備份檢查/);
+ assert.match(ui.render(),/業務資料沒有變更，會略過建立備份檔/);
  ui.bind();
  await new Promise(resolve=>setImmediate(resolve));
  assert.match(main.innerHTML,/備份間隔（天）/);

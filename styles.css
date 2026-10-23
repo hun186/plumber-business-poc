@@ -59,3 +59,16 @@
 .quote-preview-error{color:#b5453c;font-weight:700}
 .quote-preview-recipe{margin:9px 0;padding-left:20px}
 .quote-inspect-trigger:focus-visible,.quote-line-inspect:focus-visible,.quote-preview-close:focus-visible{outline:2px solid #159b89;outline-offset:2px}
+
+/* Owner backup page */
+.backup-note{padding:13px 17px;background:#eaf4f3;border-radius:10px;color:#27645c;margin:12px 0 18px}
+.backup-panel{display:grid;gap:18px}
+.backup-settings-grid{display:flex;gap:14px;align-items:end;flex-wrap:wrap;margin:16px 0}
+.backup-settings-grid label{font-size:13px;font-weight:600;display:grid;gap:7px;flex:1;min-width:150px}
+.backup-settings-grid input{padding:9px;border:1px solid #b9cfd0;border-radius:8px;width:100%;box-sizing:border-box}
+.backup-actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:16px}
+.backup-meta{display:flex;gap:12px;flex-wrap:wrap;margin:12px 0}
+.backup-meta span{font-size:13px;padding:9px 11px;background:#f1f7f6;border-radius:8px}
+.backup-error{color:#9f3932;background:#fff0ec;padding:10px 12px;border-radius:8px;margin-top:9px}
+.backup-filename{word-break:break-all;max-width:260px;font-size:12px}
+.backup-danger{color:#b33c32}

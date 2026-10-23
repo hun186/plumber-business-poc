@@ -85,8 +85,8 @@ module.exports=async(req,res)=>{
  res.setHeader('Cache-Control','no-store');
  if(!enabled())return res.status(503).json({error:'SQLite 模式未啟用：需要本機 SQLite 路徑及管理密鑰，Vercel 不支援持久 SQLite'});
  if(!authenticated(req))return res.status(401).json({error:'尚未登入'});
- if(!['GET','POST'].includes(req.method))return res.status(405).json({error:'Method not allowed'});
- if(req.method==='POST'&&!trustedOrigin(req))return res.status(403).json({error:'Invalid origin'});
+ if(!['GET','POST'].includes(req.method))return res.status(405).json({code:'E_API_METHOD',error:'此頁面不支援這個操作'});
+ if(req.method==='POST'&&!trustedOrigin(req))return res.status(403).json({code:'E_API_ORIGIN',error:'登入來源不一致，請使用系統顯示的原本網址重新登入'});
  try{
   if(req.method==='GET')return res.status(200).json({data:snapshot()});
   if(JSON.stringify(req.body||{}).length>1024*1024)invalid('請求內容過大');

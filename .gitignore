@@ -9,3 +9,7 @@ data/
 *.sqlite-shm
 *.sqlite-wal
 *.db
+
+# True business data and backups must never be pushed to GitHub.
+backups/
+logs/

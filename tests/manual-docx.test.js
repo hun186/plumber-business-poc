@@ -25,6 +25,11 @@ test('GitHub handoff contains both a valid Word archive and the source Markdown 
  const xml=z.get('word/document.xml');
  for(const phrase of ['業主部署與故障排除操作手冊','第一次安裝六步驟','故障排除 SOP','備份、還原與換電腦','E_BACKUP'])
   assert.ok(md.includes(phrase)&&xml.includes(phrase),'Both guides should cover: '+phrase);
+ for(const phrase of ['最新有效自動備份','沒有業務資料異動','上次自動檢查']){
+  assert.ok(md.includes(phrase),'Markdown manual must explain unchanged auto backup behavior: '+phrase);
+  assert.ok(xml.includes(phrase),'Downloadable Word manual must explain unchanged auto backup behavior: '+phrase);
+ }
+ assert.doesNotMatch(xml,/預設每 1 天自動備份一次|逾期，會補做一份/,'Word manual must not promise a new backup when nothing changed');
  assert.match(xml,/<w:tbl>/,'SOP error matrix should be an editable Word table');
  assert.ok(xml.includes('127.0.0.1:3000'),'The owner manual includes the localhost address');
  assert.ok(md.includes('plumber.sqlite-wal')&&md.includes('plumber.sqlite-shm'),'Markdown restore SOP must preserve and remove stale SQLite WAL/SHM as a set');

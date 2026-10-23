@@ -422,3 +422,42 @@ test('old-format empty backup locks require longer grace than PID-tagged claims'
   assert.equal(result.remains,false);
  }finally{fs.rmSync(root,{recursive:true,force:true,maxRetries:15,retryDelay:200})}
 });
+
+test('scheduler reclaims stranded claims on startup but does not rescan ACL on each minute tick',()=>{
+ const root=fixture();
+ try{
+  const result=call(root,`
+   require('./tools/owner-cli').prerequisite(true);
+   const fs=require('node:fs'),path=require('node:path'),db=require('./lib/sqlite').connection();
+   db.prepare('UPDATE backup_settings SET last_auto_at=? WHERE id=1').run(new Date().toISOString());
+   fs.mkdirSync('backups',{recursive:true});
+   const manager=require('./lib/backup-manager');
+   const realReaddir=fs.readdirSync,realImmediate=global.setImmediate;
+   const realInterval=global.setInterval,realClear=global.clearInterval;
+   let scans=0,startup=null,tick=null,intervalMs=null;
+   fs.readdirSync=function(dir,...args){
+    if(path.resolve(dir)===path.resolve('backups'))scans++;
+    return realReaddir.call(this,dir,...args);
+   };
+   global.setImmediate=fn=>{startup=fn;return {}};
+   global.setInterval=(fn,ms)=>{tick=fn;intervalMs=ms;return {unref(){}}};
+   global.clearInterval=()=>{};
+   try{
+    manager.startScheduler();
+    startup();
+    const firstScanCount=scans;
+    tick();tick();tick();
+    console.log(JSON.stringify({firstScanCount,afterTicks:scans,intervalMs}));
+   }finally{
+    manager.stopScheduler();
+    fs.readdirSync=realReaddir;
+    global.setImmediate=realImmediate;
+    global.setInterval=realInterval;
+    global.clearInterval=realClear;
+   }
+  `);
+  assert.equal(result.firstScanCount,1,'Startup must still reclaim pending files');
+  assert.equal(result.afterTicks,1,'Periodic due-date ticks must not trigger ACL/file rescans');
+  assert.equal(result.intervalMs,60000);
+ }finally{fs.rmSync(root,{recursive:true,force:true,maxRetries:15,retryDelay:200})}
+});

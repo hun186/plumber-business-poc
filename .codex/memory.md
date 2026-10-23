@@ -4,7 +4,8 @@
 
 ## Current Focus
 
-- 目前有效基線：`main@f44a42b8ba6c6d2b5241e8c879f7972add0879e4`，已合併 PR #6。
+- 目前有效基線：`main@f7cc72b43e4115a21242f4692de14d7c899749e3`，已合併 PR #7（Codex 記憶初始化）。
+- 當前工作分支正在改善「未變更不重複自動備份」，僅在 GitHub PR 合併後才能視為主線已提供；此次改動保留手動備份、預設間隔與 50 份自動保留規則。
 - 初始專案記憶從使用者提供的 `codex-project-md-template.zip` 匯入；根 README 僅修正已證實過時的備份規劃文字。
 - 產品現況：本機 Node.js + SQLite；Vercel 僅 localStorage 虛構展示；不把過去 PostgreSQL 計畫當現行架構。
 - 交付階段：需在業主 Windows 現場執行首次安裝、登入、資料持久性及隔離備份還原簽收。
@@ -34,7 +35,7 @@
 
 - 業主 Windows 電腦首次部署／隔離還原／外部備份／簽收：尚無現場完成證據，見 `backlog.md` BL-001。
 - GitHub Issue #1 仍 Open，但描述 PostgreSQL／Vercel 正式資料庫方案與目前 SQLite 實作不一致；需由維護者確認其處置，見 `known_issues.md`。
-- 本次初始化 PR 的新 SHA 與 CI、Review 必須另行核對，不得沿用上述已合併 Commit 的綠燈。
+- 後續任何新 PR 的 SHA、CI 與正式 Codex Review 都必須另行核對，不得沿用先前已合併 Commit 的綠燈。
 
 ## Archive Index
 

@@ -16,13 +16,13 @@ const BackupUI=(()=>{
  function content(data){
   const rows=data.backups||[],automated=rows.filter(x=>x.type==='auto').length;
   return '<section class="panel"><h2 class="panel-title">自動備份設定</h2>'+
-   '<p class="panel-sub">預設每 1 天備份一次、自動保留最新 50 份；設定會儲存在 SQLite 資料庫中。</p>'+
+   '<p class="panel-sub">預設每 1 天檢查一次、自動保留最新 50 份；資料未變更就略過自動備份，設定保存在 SQLite 資料庫。</p>'+
    '<form id="backup-settings-form" class="backup-settings-grid">'+
    '<label>備份間隔（天）<input name="intervalDays" type="number" min="1" max="365" step="1" required value="'+safe(data.intervalDays)+'"></label>'+
    '<label>自動備份保留份數<input name="retentionCount" type="number" min="1" max="500" step="1" required value="'+safe(data.retentionCount)+'"></label>'+
    '<button class="btn primary" type="submit">儲存備份設定</button></form>'+
-   '<p class="small-note">保留份數只清理「自動備份」。手動備份不會被排程自動刪除，需自行管理。</p>'+
-   '<div class="backup-meta"><span><b>上次自動備份：</b>'+safe(iso(data.lastAutoAt))+'</span><span><b>下次預計：</b>'+safe(iso(data.nextDueAt))+'</span><span><b>目前自動版本：</b>'+automated+' 份</span></div>'+
+   '<p class="small-note">自動備份會比較前一次有效自動備份的業務資料（不計排程設定）；沒有變更不產生新檔，也不占保留名額。手動備份仍可隨時建立，且不會被排程自動刪除。</p>'+
+   '<div class="backup-meta"><span><b>上次自動檢查：</b>'+safe(iso(data.lastAutoAt))+'</span><span><b>下次預計：</b>'+safe(iso(data.nextDueAt))+'</span><span><b>已建立自動版本：</b>'+automated+' 份</span></div>'+
    (data.lastError?'<div class="backup-error" role="alert">⚠ 最近一次自動備份錯誤：'+safe(data.lastError)+'</div>':'')+
    '<div class="backup-actions"><button id="backup-create" class="btn primary">立即建立手動備份</button><button id="backup-reload" class="btn">重新整理</button></div></section>'+
    '<section class="panel"><h2 class="panel-title">歷史備份</h2><p class="panel-sub">已建立 '+rows.length+' 個版本。可下載 SQLite 檔案；刪除前會再次確認。<strong>資料還原必須停止系統後由管理人員執行，不能直接在運作中的網站覆蓋資料庫。</strong></p>'+

@@ -89,3 +89,28 @@ test('component templates reject unpriced materials without editing existing bus
  assert.throws(()=>upsertCatalog('add',{id:'w-not-quoted',parentId:null,kind:'task',name:'未定價',unit:'式',defaultQty:1,unitPrice:0,pricingMode:'components',serviceUnitPrice:20,materials:[{itemId:'i-no-price',qty:1}],note:''},db),/尚未設定對客售價/);
  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM work_templates WHERE id='w-not-quoted'").get().n,0);
 });
+
+test('versioned v6 database with missing pricing table fails closed without rebuilding lost tables',()=>{
+ const file=path.join(folder,'damaged-v6.sqlite');
+ const {connection}=require('../lib/sqlite');
+ // VACUUM INTO gives an isolated copy without touching the test's active main DB.
+ connection().exec("VACUUM INTO '"+file.replace(/'/g,"''")+"'");
+ const db=new DatabaseSync(file);
+ db.exec('DROP TABLE work_component_pricing');
+ db.close();
+ assert.throws(()=>owner.verifyEstablishedSchema({databasePath:file}),/v0.6.*遺失|v0.6.*不完整/);
+ const reader=new DatabaseSync(file,{readOnly:true});
+ try{assert.equal(reader.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name='work_component_pricing'").get().n,0)}
+ finally{reader.close()}
+});
+test('partial v5 sidecar upgrade is rejected before creating missing pricing table',()=>{
+ const file=path.join(folder,'partial-v5.sqlite');
+ const db=new DatabaseSync(file);
+ db.exec(read('schema.sqlite.sql'));
+ db.exec(read('inventory.sql'));
+ db.exec(read('catalog.sql').split('-- v0.6 additive price lists.')[0]);
+ db.exec(read('backup.sql'));
+ db.exec("CREATE TABLE inventory_sale_prices(item_id TEXT PRIMARY KEY REFERENCES inventory_items(id),unit_sale_price REAL NOT NULL CHECK(unit_sale_price>=0)); PRAGMA user_version=5");
+ db.close();
+ assert.throws(()=>owner.verifyEstablishedSchema({databasePath:file}),/v0.6.*不完整/);
+});

@@ -351,3 +351,16 @@ test('canonical unique, foreign-key, CHECK constraints remain enforced before mi
   }
  }finally{fs.rmSync(root,{recursive:true,force:true,maxRetries:14,retryDelay:200})}
 });
+
+test('Windows owner launchers contain ASCII-only command text and preserve error status',()=>{
+ for(const [name,command] of [['啟動水電好管家.bat','start'],['部署檢查.bat','check'],['備份資料.bat','backup']]){
+  const bytes=fs.readFileSync(path.join(__dirname,'..',name));
+  assert.ok(bytes.every(byte=>byte<128),name+' must be 7-bit ASCII for cmd.exe regardless of system locale');
+  const script=bytes.toString('ascii');
+  assert.match(script,/cd \/d "%~dp0"/i);
+  assert.match(script,/where node\.exe >nul 2>nul/i);
+  assert.ok(script.includes('node "%~dp0tools\\owner-cli.js" '+command));
+  assert.match(script,/if errorlevel 1 \(/);
+  assert.match(script,/exit \/b 1/i);
+ }
+});

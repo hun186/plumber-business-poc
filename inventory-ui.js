@@ -10,13 +10,13 @@ const InventoryUI=(()=>{
  const select=(title,name,rows,v)=>'<div class="field"><label>'+title+'</label><select name="'+name+'">'+opts(rows,v)+'</select></div>';
  function renderInventory(){
   const filtered=list().filter(i=>(i.name+' '+i.sku+' '+i.note).toLowerCase().includes(state.search.toLowerCase()));
-  const rows=filtered.map(i=>'<tr><td><b>'+esc(i.name)+'</b><div class="sub">'+esc(i.sku)+'</div></td><td>'+esc(i.unit)+'</td><td><b>'+fmt(i.stock)+'</b></td><td>'+fmt(i.alertQty)+'</td><td>'+money(i.unitCost)+'</td><td>'+money(n(i.stock)*n(i.unitCost))+'</td><td>'+(n(i.stock)<=n(i.alertQty)?'<span class="stock-warning">⚠ 低庫存</span>':'<span class="stock-ok">正常</span>')+'</td><td><button class="action-link" data-edit-item="'+esc(i.id)+'">編輯</button><button class="action-link" data-move-item="'+esc(i.id)+'">出入庫</button></td></tr>').join('');
+  const rows=filtered.map(i=>'<tr><td><b>'+esc(i.name)+'</b><div class="sub">'+esc(i.sku)+'</div></td><td>'+esc(i.unit)+'</td><td><b>'+fmt(i.stock)+'</b></td><td>'+fmt(i.alertQty)+'</td><td>'+money(i.unitCost)+'</td><td>'+(i.saleUnitPrice==null?'未設定':money(i.saleUnitPrice))+'</td><td>'+(i.saleUnitPrice==null?'—':money(n(i.saleUnitPrice)-n(i.unitCost)))+'</td><td>'+money(n(i.stock)*n(i.unitCost))+'</td><td>'+(n(i.stock)<=n(i.alertQty)?'<span class="stock-warning">⚠ 低庫存</span>':'<span class="stock-ok">正常</span>')+'</td><td><button class="action-link" data-edit-item="'+esc(i.id)+'">編輯</button><button class="action-link" data-move-item="'+esc(i.id)+'">出入庫</button></td></tr>').join('');
   const history=moves().slice(0,40).map(m=>'<tr><td>'+esc(m.date)+'</td><td>'+esc(item(m.itemId).name)+'</td><td>'+esc({receive:'進貨入庫',issue:'工程領料',adjust:'盤點調整'}[m.kind]||m.kind)+'</td><td>'+fmt(m.qty)+'</td><td>'+esc(m.projectId?project(m.projectId).title:'—')+'</td><td>'+esc(m.note||'—')+'</td></tr>').join('');
   return head('inventory','耗材與倉儲管理','庫存由異動帳本計算；低於或等於告警量顯示提醒。','<button class="btn primary" data-create-item>＋ 新增耗材</button>')+
     '<div class="cards"><div class="stat"><div class="label">耗材品項</div><div class="metric">'+list().length+'</div></div><div class="stat"><div class="label">庫存估算價值</div><div class="metric">'+money(list().reduce((s,i)=>s+n(i.stock)*n(i.unitCost),0))+'</div></div><div class="stat '+(alerts().length?'rose':'green')+'"><div class="label">低庫存告警</div><div class="metric">'+alerts().length+' 項</div></div><div class="stat"><div class="label">出入庫紀錄</div><div class="metric">'+moves().length+'</div></div></div>'+
     (alerts().length?'<div class="inventory-alert">⚠ 待補貨：'+alerts().map(i=>esc(i.name)+'（現有 '+fmt(i.stock)+' '+esc(i.unit)+'，警戒 '+fmt(i.alertQty)+'）').join('、')+'</div>':'')+
     '<section class="panel"><div class="table-toolbar">'+searchBox('搜尋料號與品名')+'<button class="btn" data-go="materials">工程用料規劃 →</button></div>'+
-    table(['耗材／料號','單位','現存量','警戒量','單位成本','庫存估價','狀態','操作'],rows)+'</section><section class="panel inventory-later"><h2 class="panel-title">庫存異動紀錄</h2>'+table(['日期','耗材','類別','數量變化','歸屬工程','備註'],history)+'</section><div class="banner">異動紀錄不可直接刪除；錯誤數量請以盤點調整修正，工程領料自動計入材料成本。</div>';
+    table(['耗材／料號','單位','現存量','警戒量','進貨參考成本','對客材料售價','單位材料差價','庫存估價','狀態','操作'],rows)+'</section><section class="panel inventory-later"><h2 class="panel-title">庫存異動紀錄</h2>'+table(['日期','耗材','類別','數量變化','歸屬工程','備註'],history)+'</section><div class="banner">異動紀錄不可直接刪除；錯誤數量請以盤點調整修正，工程領料自動計入材料成本。</div>';
  }
  function renderRequirements(){
   const coverage=BusinessReports.materialCoverage(state.data);
@@ -35,7 +35,7 @@ const InventoryUI=(()=>{
     const d=state.data;const current=list().find(x=>x.id===p.itemId);
     const stock=id=>moves().filter(m=>m.itemId===id).reduce((s,m)=>s+n(m.qty),0);
     if(action==='itemAdd'||action==='itemUpdate'){
-     if(!p.name||!p.sku||!p.unit||n(p.unitCost)<0||n(p.alertQty)<0)throw Error('料件欄位不完整');
+     if(!p.name||!p.sku||!p.unit||n(p.unitCost)<0||n(p.alertQty)<0||(p.saleUnitPrice!=null&&(!Number.isFinite(Number(p.saleUnitPrice))||Number(p.saleUnitPrice)<0)))throw Error('料件欄位不完整');
      if(list().some(i=>i.id!==p.id&&i.sku===p.sku))throw Error('料號不可重複');
      if(action==='itemAdd')list().push({...p,stock:0});
      else{const old=item(p.id);if(old.unit!==p.unit&&(moves().some(m=>m.itemId===p.id)||plans().some(r=>r.itemId===p.id)||
@@ -72,8 +72,10 @@ const InventoryUI=(()=>{
  }
  function itemForm(existing){
   const p=existing||{};
-  openModal(existing?'編輯耗材':'建立耗材','<div class="form-grid">'+field('料號','sku',p.sku||'')+field('耗材名稱','name',p.name||'')+field('單位','unit',p.unit||'個')+field('參考單位成本','unitCost',p.unitCost??0,'number')+field('低庫存警戒數量','alertQty',p.alertQty??0,'number')+note(p.note)+'</div>',
-   f=>{const v=Object.fromEntries(f.entries());apply(existing?'itemUpdate':'itemAdd',{...v,id:p.id||uid('i'),unitCost:Number(v.unitCost),alertQty:Number(v.alertQty)})});
+  openModal(existing?'編輯耗材':'建立耗材','<div class="form-grid">'+field('料號','sku',p.sku||'')+field('耗材名稱','name',p.name||'')+field('單位','unit',p.unit||'個')+field('業主進貨參考成本','unitCost',p.unitCost??0,'number')+
+   '<div class="field"><label>對客材料售價（每單位）</label><input name="saleUnitPrice" type="number" min="0" step="0.01" '+(existing?'':'required')+' value="'+esc(p.saleUnitPrice??'')+'"><small class="sub">舊料件可暫不設定；自動材料報價前必須填入售價。</small></div>'+
+   field('低庫存警戒數量','alertQty',p.alertQty??0,'number')+note(p.note)+'</div>',
+   f=>{const v=Object.fromEntries(f.entries());apply(existing?'itemUpdate':'itemAdd',{...v,id:p.id||uid('i'),unitCost:Number(v.unitCost),saleUnitPrice:v.saleUnitPrice===''||v.saleUnitPrice==null?null:Number(v.saleUnitPrice),alertQty:Number(v.alertQty)})});
  }
  function moveForm(itemId,kind='receive',projectId='',suggest=1){
   if(!list().length)return toast('請先建立耗材品項');

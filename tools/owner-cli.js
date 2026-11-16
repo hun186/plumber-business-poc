@@ -175,7 +175,7 @@ function verifyEstablishedSchema(conf,allowFirstInstall=false){
   // SQLite user_version is the durable installed schema marker. A versioned
   // database must not silently reconstruct a whole missing additive group.
   const version=reader.prepare('PRAGMA user_version').get().user_version;
-  if(!Number.isInteger(version)||version<0||version>5||version===1)
+  if(!Number.isInteger(version)||version<0||version>6||version===1)
    fail('E_DB','無法辨識資料庫版本標記，拒絕自動升級');
   // Unversioned v0.4 databases predate our marker and may add only the
   // new backup_settings table automatically. Genuine v0.2/v0.3 files need
@@ -183,7 +183,8 @@ function verifyEstablishedSchema(conf,allowFirstInstall=false){
   const authorized=process.env.OWNER_ALLOW_LEGACY_UPGRADE==='1';
   const inventory=['inventory_items','inventory_movements','material_requirements'];
   const catalog=['work_templates','quote_material_plans'];
-  for(const [label,group] of [['v0.3 倉儲',inventory],['v0.4 工項',catalog]]){
+  const pricing=['inventory_sale_prices','work_component_pricing'];
+  for(const [label,group] of [['v0.3 倉儲',inventory],['v0.4 工項',catalog],['v0.6 售價',pricing]]){
    const count=group.filter(name=>tables.has(name)).length;
    if(count!==0&&count!==group.length)
     fail('E_DB',label+' 的資料表不完整，拒絕建立可能覆蓋原有資料的空表');
@@ -194,6 +195,8 @@ function verifyEstablishedSchema(conf,allowFirstInstall=false){
    fail('E_DB','既有 v0.3 以上資料庫遺失整組倉儲資料表，拒絕補建空表');
   if(version>=4&&!catalog.every(t=>tables.has(t)))
    fail('E_DB','既有 v0.4 以上資料庫遺失整組工項資料表，拒絕補建空表');
+  if(version>=6&&(!tables.has('inventory_sale_prices')||!tables.has('work_component_pricing')))
+   fail('E_DB','既有 v0.6 資料庫遺失材料售價或工項計價表，拒絕補建');
   if(version>=5&&!tables.has('backup_settings'))
    fail('E_DB','既有 v0.5 資料庫遺失備份設定表，拒絕補建');
   if(version===0&&(!inventory.every(t=>tables.has(t))||!catalog.every(t=>tables.has(t)))){
@@ -211,7 +214,9 @@ function verifyEstablishedSchema(conf,allowFirstInstall=false){
    material_requirements:['id','project_id','item_id','planned_qty','note','created_at'],
    work_templates:['id','parent_id','kind','name','unit','default_qty','unit_price','materials','note','created_at'],
    quote_material_plans:['project_id','item_id','quote_id','planned_qty'],
-   backup_settings:['id','interval_days','retention_count','last_auto_at','last_error','updated_at']
+   backup_settings:['id','interval_days','retention_count','last_auto_at','last_error','updated_at'],
+   inventory_sale_prices:['item_id','unit_sale_price'],
+   work_component_pricing:['template_id','service_unit_price']
   };
   for(const [table,columns] of Object.entries(required)){
    if(!tables.has(table))continue;

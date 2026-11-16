@@ -54,3 +54,10 @@
 
 - 只有 Accepted 是現行約束，且應與程式及測試核對；新決策若取代舊決策，保留替代鏈。
 - 不為一般 bug fix、格式調整新增 ADR。
+
+### ADR-0006 — 材料雙價格、勞務收費與估價快照（PR #10 待審）
+
+- 狀態：Proposed（未合併或正式驗收前不標為 Accepted）。
+- 決策：耗材成本與對客售價獨立；工項自動計價以材料售價合計＋施工勞務收費，舊工項沿用手動整體價格。報價儲存材料與施工價格快照，後續調整不得改寫既有估價。
+- 取捨：對既有 SQLite 不修改原表 schema，新增 sidecar 表，v5→v6 增量升級；未定價舊耗材保留 null，不猜報價或差價。已接受的估價為估算，不等於正式認列的營收與勞務利潤。
+- 證據：`db/catalog.sql`、`lib/inventory.js`、`lib/catalog.js`、`catalog-kit.js`、`reports.js`、`tests/pricing.test.js`。

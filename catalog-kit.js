@@ -2,7 +2,8 @@
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.CatalogKit=api})(typeof globalThis!=='undefined'?globalThis:this,function(){
  'use strict';
  const round3=v=>Math.round((Number(v)+Number.EPSILON)*1000)/1000;
- function flatten(templates,selectedId){
+ const roundMoney=v=>Math.round((Number(v)+Number.EPSILON)*100)/100;
+ function flatten(templates,selectedId,inventoryItems=[]){
   const byId=new Map(templates.map(t=>[t.id,t]));
   const root=byId.get(selectedId);if(!root)throw new Error('找不到工項範本');
   const children=new Map();for(const t of templates){if(!t.parentId)continue;const siblings=children.get(t.parentId)||[];siblings.push(t);children.set(t.parentId,siblings)}
@@ -17,8 +18,21 @@
     for(const child of sub)walk(child,nextQty,names,next);
    }else{
     if(children.has(t.id))throw new Error('一般工項不能包含子工項');
-    items.push({name:names.join(' / '),qty:nextQty,unit:t.unit||'式',price:Number(t.unitPrice)||0,
-     catalogId:t.id,materials:(t.materials||[]).map(m=>({itemId:m.itemId,qty:round3(Number(m.qty))}))});
+    const components=t.pricingMode==='components';
+    const materialLines=(t.materials||[]).map(m=>{
+     const line={itemId:m.itemId,qty:round3(Number(m.qty))};
+     if(!components)return line;
+     const stocked=inventoryItems.find(i=>i.id===m.itemId);
+     if(!stocked||stocked.saleUnitPrice===null||stocked.saleUnitPrice===undefined)
+      throw new Error('工項「'+t.name+'」的材料尚未設定對客售價，請至耗材倉儲設定');
+     return {...line,unitCost:Number(stocked.unitCost),unitSalePrice:Number(stocked.saleUnitPrice)};
+    });
+    const sale=components?roundMoney(materialLines.reduce((n,m)=>n+m.qty*m.unitSalePrice,0)):null;
+    const service=components?Number(t.serviceUnitPrice)||0:null;
+    const price=components?roundMoney(sale+service):Number(t.unitPrice)||0;
+    const line={name:names.join(' / '),qty:nextQty,unit:t.unit||'式',price,catalogId:t.id,materials:materialLines};
+    if(components){line.pricingMode='components';line.serviceUnitPrice=service;}
+    items.push(line);
    }
   }
   walk(root,1,[],new Set());
@@ -82,5 +96,28 @@
  function quoteHeaderFields(formData){
   return Object.fromEntries(['number','date','projectId','status','taxRate','note'].map(name=>[name,formData.get(name)]));
  }
- return {flatten,quoteMaterials,clearQuotePlans,ensureHierarchyDepth,round3,quoteHeaderFields};
+ function quoteIncomeBreakdown(quote){
+  const result={materialSales:0,materialCost:0,serviceSales:0,otherSales:0,unclassifiedSales:0,materialMargin:0,totalSales:0,pricedLines:0,unclassifiedLines:0};
+  for(const line of quote.items||[]){
+   const count=Number(line.qty)||0,actual=roundMoney(count*Number(line.price||0));
+   result.totalSales=roundMoney(result.totalSales+actual);
+   if(line.pricingMode!=='components'||!Array.isArray(line.materials)||!Number.isFinite(Number(line.serviceUnitPrice))){
+    result.unclassifiedSales=roundMoney(result.unclassifiedSales+actual);result.unclassifiedLines++;continue;
+   }
+   if(!line.materials.every(m=>Number.isFinite(m.unitCost)&&Number.isFinite(m.unitSalePrice)&&Number.isFinite(m.qty))){
+    result.unclassifiedSales=roundMoney(result.unclassifiedSales+actual);result.unclassifiedLines++;continue;
+   }
+   const materialsSale=roundMoney(count*line.materials.reduce((n,m)=>n+Number(m.qty)*Number(m.unitSalePrice),0));
+   const materialsCost=roundMoney(count*line.materials.reduce((n,m)=>n+Number(m.qty)*Number(m.unitCost),0));
+   const serviceSale=roundMoney(count*Number(line.serviceUnitPrice));
+   result.materialSales=roundMoney(result.materialSales+materialsSale);
+   result.materialCost=roundMoney(result.materialCost+materialsCost);
+   result.serviceSales=roundMoney(result.serviceSales+serviceSale);
+   result.otherSales=roundMoney(result.otherSales+actual-materialsSale-serviceSale);
+   result.pricedLines++;
+  }
+  result.materialMargin=roundMoney(result.materialSales-result.materialCost);
+  return result;
+ }
+ return {flatten,quoteMaterials,quoteIncomeBreakdown,clearQuotePlans,ensureHierarchyDepth,round3,roundMoney,quoteHeaderFields};
 });

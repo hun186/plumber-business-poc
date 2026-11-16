@@ -14,10 +14,11 @@
   byType:{name:'類別毛利統計',headers:['業務類別','案件數','案件金額','登錄成本','估算毛利','估算毛利率','收款金額']},
   byCost:{name:'成本類別統計',headers:['成本類型','筆數','金額','成本占比']},
   profit:{name:'個案毛利分析',headers:['案件編號','工程名稱','業務類別','案件狀態','客戶','案件金額','登錄成本','估算毛利','估算毛利率','收款金額']},
-  inventory:{name:'耗材庫存清冊',headers:['料號','品名','單位','庫存量','警戒量','單位成本','估算庫存價值','告警狀態','備註']},
+  inventory:{name:'耗材庫存清冊',headers:['料號','品名','單位','庫存量','警戒量','進貨參考成本','對客材料售價','單位材料差價','估算庫存價值','告警狀態','備註']},
+  incomeMix:{name:'已接受估價組成',headers:['工程','估價單號','未稅合計','材料對客售價','材料估計成本','材料預估差價','施工勞務報價','其他價格調整','未分類報價','未分類工項數']},
   materialNeeds:{name:'工程材料需求',headers:['案件編號','工程名稱','料號','耗材','單位','預計需求','已領用','待領用','庫存量','備料狀態','備註']},
   stockMoves:{name:'庫存異動紀錄',headers:['異動編號','日期','料號','耗材','異動類型','數量','記錄單價','歸屬工程','備註']},
-  workTemplates:{name:'工項與包項範本',headers:['範本ID','所屬包項ID','種類','工項名稱','每上層預設數量','計量單位','未稅單價','備註']},
+  workTemplates:{name:'工項與包項範本',headers:['範本ID','所屬包項ID','種類','工項名稱','每上層預設數量','計量單位','計價模式','每單位材料對客售價合計','每單位施工勞務售價','每單位有效未稅報價','備註']},
   workBom:{name:'工項材料配方',headers:['工項範本ID','工項名稱','材料料號','材料名稱','每單位工項耗材數量','耗材單位']},
   summary:{name:'營運摘要',headers:['指標','數值']}
  };
@@ -50,6 +51,31 @@
   return {selection:s,profitRows,byType,byCost,totals:{projects:profitRows.length,revenue,cost,profit:revenue-cost,margin:revenue?(revenue-cost)/revenue:null,collected,uncollected:sum(profitRows,x=>Math.max(0,x.revenue-x.collected))}};
  }
 
+ // Accepted quote composition is a forecast, not booked revenue. Choose only
+ // the latest accepted quote per project to avoid double counting alternatives.
+ function quoteComposition(data,filters={}){
+  const sel=selected(data,filters),best=new Map();
+  for(const quote of sel.quotes){
+   if(quote.status!=='已接受')continue;
+   const prior=best.get(quote.projectId);
+   if(!prior||String(quote.date||'').localeCompare(String(prior.date||''))>0||
+      (quote.date===prior.date&&String(quote.id)>String(prior.id)))best.set(quote.projectId,quote);
+  }
+  const kit=typeof module==='object'&&module.exports?require('./catalog-kit'):CatalogKit;
+  const rows=[...best.values()].map(quote=>({
+   ...kit.quoteIncomeBreakdown(quote),number:quote.number,projectId:quote.projectId,
+   projectTitle:sel.byId.get(quote.projectId)?.title||'',status:quote.status
+  }));
+  const totals={quoteCount:rows.length,materialSales:0,materialCost:0,materialMargin:0,serviceSales:0,
+   otherSales:0,unclassifiedSales:0,totalSales:0,unclassifiedLines:0};
+  for(const row of rows)for(const key of Object.keys(totals)){
+   if(key==='quoteCount')continue;
+   totals[key]+=Number(row[key])||0;
+  }
+  for(const key of Object.keys(totals))if(key!=='quoteCount'&&key!=='unclassifiedLines')totals[key]=Math.round((totals[key]+Number.EPSILON)*100)/100;
+  return {rows,totals};
+ }
+
  function materialCoverage(data){
   const projectById=new Map((data.projects||[]).map(p=>[p.id,p]));
   const issues=new Map();
@@ -76,7 +102,7 @@
  }
  function quoteTotal(q){const subtotal=sum(q.items||[],i=>n(i.qty)*n(i.price));const tax=Math.round(subtotal*n(q.taxRate)/100);return {subtotal,tax,total:subtotal+tax}}
  function sheets(data,filters={},keys=Object.keys(columns)){
-  const a=analyze(data,filters),s=selected(data,filters,true),projMap=s.byId,customers=s.custById;
+  const a=analyze(data,filters),composition=quoteComposition(data,filters),s=selected(data,filters,true),projMap=s.byId,customers=s.custById;
   const costByProject=new Map(),paidByProject=new Map(),profitByProject=new Map(a.profitRows.map(p=>[p.id,p]));for(const c of s.costs)costByProject.set(c.projectId,n(costByProject.get(c.projectId))+n(c.amount));for(const p of s.payments)paidByProject.set(p.projectId,n(paidByProject.get(p.projectId))+n(p.amount));
   const coverage=materialCoverage(data);
   const inventoryMap=new Map((data.inventoryItems||[]).map(i=>[i.id,i]));const selectedProjects=new Set(s.projects.map(p=>p.id));const allMovements=data.inventoryMovements||[];
@@ -92,14 +118,28 @@
    byType:a.byType.map(x=>[x.type,x.count,x.revenue,x.cost,x.profit,x.margin,x.collected]),
    byCost:a.byCost.map(x=>[x.category,x.count,x.amount,x.share]),
    profit:a.profitRows.map(x=>[x.id,x.title,x.type,x.status,x.customer,x.revenue,x.cost,x.profit,x.margin,x.collected]),
-   inventory:(data.inventoryItems||[]).map(i=>[i.sku,i.name,i.unit,n(i.stock),n(i.alertQty),n(i.unitCost),n(i.stock)*n(i.unitCost),n(i.stock)<=n(i.alertQty)?'低庫存':'正常',i.note]),
+   inventory:(data.inventoryItems||[]).map(i=>[i.sku,i.name,i.unit,n(i.stock),n(i.alertQty),n(i.unitCost),i.saleUnitPrice==null?'':n(i.saleUnitPrice),i.saleUnitPrice==null?'':n(i.saleUnitPrice)-n(i.unitCost),n(i.stock)*n(i.unitCost),n(i.stock)<=n(i.alertQty)?'低庫存':'正常',i.note]),
+   incomeMix:composition.rows.map(q=>[q.projectTitle,q.number,q.totalSales,q.materialSales,q.materialCost,q.materialMargin,q.serviceSales,q.otherSales,q.unclassifiedSales,q.unclassifiedLines]),
    materialNeeds:(data.materialRequirements||[]).filter(r=>selectedProjects.has(r.projectId)).map(r=>{const i=inventoryMap.get(r.itemId)||{},usedQty=used(r.projectId,r.itemId),rest=coverage.remaining.get(r.id)||0,shared=coverage.byItem.get(r.itemId),cancelled=projMap.get(r.projectId)?.status==='已取消';const readiness=cancelled?'案件已取消':shared?.shortfall>0?`整體備料不足（共缺 ${shared.shortfall}）`:'可備料';return [r.projectId,projMap.get(r.projectId)?.title||'',i.sku||'',i.name||'',i.unit||'',n(r.plannedQty),usedQty,rest,n(i.stock),readiness,r.note]}),
    stockMoves:allMovements.filter(m=>noFilters||(m.projectId&&selectedProjects.has(m.projectId))).map(m=>{const i=inventoryMap.get(m.itemId)||{};return [m.id,m.date,i.sku||'',i.name||'',{receive:'進貨入庫',issue:'工程領料',adjust:'盤點調整'}[m.kind]||m.kind,n(m.qty),n(m.unitCost),m.projectId?projMap.get(m.projectId)?.title||'':'',m.note]}),
-   workTemplates:(data.workTemplates||[]).map(t=>[t.id,t.parentId||'',t.kind==='package'?'包項':'工項',t.name,n(t.defaultQty),t.unit,n(t.unitPrice),t.note]),
+   workTemplates:(data.workTemplates||[]).map(t=>{
+    const mode=t.kind==='package'?'包項（子工項合計）':t.pricingMode==='components'?'材料售價＋施工勞務':'手動整體報價';
+    let materialSale='',serviceSale='',effectivePrice='';
+    if(t.kind==='task'&&t.pricingMode==='components'){
+     try{
+      const kit=typeof module==='object'&&module.exports?require('./catalog-kit'):CatalogKit;
+      const line=kit.flatten(data.workTemplates||[],t.id,data.inventoryItems||[])[0];
+      materialSale=kit.roundMoney((line.materials||[]).reduce((sum,m)=>sum+Number(m.qty)*Number(m.unitSalePrice),0));
+      serviceSale=line.serviceUnitPrice;
+      effectivePrice=line.price;
+     }catch(error){effectivePrice='材料售價未設定／配方無效'}
+    }else if(t.kind==='task'){effectivePrice=n(t.unitPrice)}
+    return [t.id,t.parentId||'',t.kind==='package'?'包項':'工項',t.name,n(t.defaultQty),t.unit,mode,materialSale,serviceSale,effectivePrice,t.note]
+   }),
    workBom:(data.workTemplates||[]).flatMap(t=>(t.materials||[]).map(m=>{const i=inventoryMap.get(m.itemId)||{};return [t.id,t.name,i.sku||'',i.name||'',n(m.qty),i.unit||'']})),
    summary:[['報表範圍_開始日',filters.from||'全部'],['報表範圍_結束日',filters.to||'全部'],['業務類別篩選',filters.type||'全部'],['工程狀態篩選',filters.status||'全部'],['有效案件數',a.totals.projects],['案件金額合計_未稅',a.totals.revenue],['已登錄成本',a.totals.cost],['估算毛利',a.totals.profit],['估算毛利率',a.totals.margin??'無法計算'],['已收款',a.totals.collected],['預估未收款',a.totals.uncollected],['統計說明','毛利分析不含已取消案件；已取消案件仍列於明細；耗材庫存清冊顯示全庫；工程需求及領料依工程篩選'],['重要提醒','案件金額可能是預估報價；成本可能尚未登齊，毛利與毛利率僅供管理估算，並非會計認列獲利']]
   };
   return [...new Set(keys)].filter(k=>columns[k]).map(k=>({name:columns[k].name,headers:columns[k].headers,rows:rows[k]}));
  }
- return {analyze,selected,sheets,columns,quoteTotal,materialCoverage};
+ return {analyze,selected,sheets,columns,quoteTotal,quoteComposition,materialCoverage};
 });

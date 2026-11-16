@@ -236,3 +236,22 @@ test('Escape from a stale detached preview must not intercept the quote editor',
  });
  assert.equal(ui.dismissPreviewOnEscape(),false);
 });
+
+test('auto-priced quote rows accept material and labor cents without HTML step mismatch',()=>{
+ assert.match(appScript,/name="price" type="number" min="0" step="0\.01"/);
+ const kit=require('../catalog-kit');
+ const line=kit.flatten([{id:'w-cent',name:'配線',kind:'task',unit:'式',defaultQty:1,pricingMode:'components',serviceUnitPrice:600,materials:[{itemId:'i-cent',qty:1}]}],
+ 'w-cent',[{id:'i-cent',unitCost:30.25,saleUnitPrice:45.5}])[0];
+ assert.equal(line.price,645.5);
+ assert.equal(line.materials[0].unitSalePrice,45.5);
+});
+
+test('customer-facing printed quotes never show the internal material margin breakdown',()=>{
+ // The management breakdown remains in the interactive preview, but must not
+ // render in the browser's print/PDF output.
+ const css=fs.readFileSync(path.join(__dirname,'../styles.css'),'utf8');
+ assert.match(appScript,/const summary=breakdown\.pricedLines\?'<div class="banner quote-internal-breakdown">/);
+ assert.match(css,/@media print\{\.quote-internal-breakdown\{display:none!important\}/);
+ const textBeforePrint=appScript.slice(appScript.indexOf('function preview('),appScript.indexOf('function detail('));
+ assert.ok(textBeforePrint.includes('${summary}${html}'),'the screen-only banner is attached to the quote preview');
+});

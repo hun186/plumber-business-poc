@@ -41,11 +41,15 @@ function validate(cfg,p,conn,action) {
    if(!Array.isArray(merged.items)||!merged.items.length||merged.items.length>100)invalid('估價工項數量不合法');
    for(const i of merged.items){
     if(!i||typeof i.name!=='string'||!i.name.trim()||i.name.length>200||typeof i.unit!=='string'||i.unit.length>30||!Number.isFinite(Number(i.qty))||Number(i.qty)<=0||!Number.isFinite(Number(i.price))||Number(i.price)<0)invalid('估價工項內容不合法');
+    if(i.pricingMode!==undefined&&i.pricingMode!=='components')invalid('估價計價模式不合法');
+    if(i.pricingMode==='components'&&(!Number.isFinite(i.serviceUnitPrice)||i.serviceUnitPrice<0))invalid('勞務售價快照不合法');
     if(i.materials!==undefined){
      if(!Array.isArray(i.materials)||i.materials.length>80)invalid('估價材料配方格式錯誤');
      const seen=new Set();
      for(const m of i.materials){
       if(!m||typeof m.itemId!=='string'||!/^i-[a-zA-Z0-9-]{2,76}$/.test(m.itemId)||seen.has(m.itemId)||!Number.isFinite(Number(m.qty))||Number(m.qty)<=0||!/^(?:0|[1-9]\d*)(?:\.\d{1,3})?$/.test(String(m.qty)))invalid('估價材料用量不合法');
+      if(i.pricingMode==='components'&&(!Number.isFinite(m.unitCost)||m.unitCost<0||!Number.isFinite(m.unitSalePrice)||m.unitSalePrice<0))
+       invalid('估價材料售價／成本快照不合法');
       seen.add(m.itemId);
      }
     }

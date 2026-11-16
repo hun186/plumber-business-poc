@@ -1,6 +1,6 @@
 {
   "name": "plumber-business-poc",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "description": "水電工程業務管理 PoC：SQLite、成本毛利分析、Excel 多工作表匯出",
   "scripts": {

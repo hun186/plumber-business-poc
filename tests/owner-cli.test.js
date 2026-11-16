@@ -308,7 +308,7 @@ test('marked production SQLite rejects complete loss of its catalog schema',()=>
   const run=cmd=>spawnSync(process.execPath,cmd,{cwd:root,env,encoding:'utf8',timeout:15000});
   assert.equal(run(['-e',"require('./tools/owner-cli').prerequisite(true)"]).status,0);
   const {DatabaseSync}=require('node:sqlite'),dbpath=path.join(root,'data','plumber.sqlite'),db=new DatabaseSync(dbpath);
-  assert.equal(db.prepare('PRAGMA user_version').get().user_version,5);
+  assert.equal(db.prepare('PRAGMA user_version').get().user_version,6);
   db.exec('DROP TABLE quote_material_plans; DROP TABLE work_templates;');db.close();
   const result=run(['tools/owner-cli.js','check']);
   assert.notEqual(result.status,0);

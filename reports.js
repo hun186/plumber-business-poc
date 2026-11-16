@@ -18,7 +18,7 @@
   incomeMix:{name:'已接受估價組成',headers:['工程','估價單號','未稅合計','材料對客售價','材料估計成本','材料預估差價','施工勞務報價','其他價格調整','未分類報價','未分類工項數']},
   materialNeeds:{name:'工程材料需求',headers:['案件編號','工程名稱','料號','耗材','單位','預計需求','已領用','待領用','庫存量','備料狀態','備註']},
   stockMoves:{name:'庫存異動紀錄',headers:['異動編號','日期','料號','耗材','異動類型','數量','記錄單價','歸屬工程','備註']},
-  workTemplates:{name:'工項與包項範本',headers:['範本ID','所屬包項ID','種類','工項名稱','每上層預設數量','計量單位','未稅單價','備註']},
+  workTemplates:{name:'工項與包項範本',headers:['範本ID','所屬包項ID','種類','工項名稱','每上層預設數量','計量單位','計價模式','每單位材料對客售價合計','每單位施工勞務售價','每單位有效未稅報價','備註']},
   workBom:{name:'工項材料配方',headers:['工項範本ID','工項名稱','材料料號','材料名稱','每單位工項耗材數量','耗材單位']},
   summary:{name:'營運摘要',headers:['指標','數值']}
  };
@@ -122,7 +122,20 @@
    incomeMix:composition.rows.map(q=>[q.projectTitle,q.number,q.totalSales,q.materialSales,q.materialCost,q.materialMargin,q.serviceSales,q.otherSales,q.unclassifiedSales,q.unclassifiedLines]),
    materialNeeds:(data.materialRequirements||[]).filter(r=>selectedProjects.has(r.projectId)).map(r=>{const i=inventoryMap.get(r.itemId)||{},usedQty=used(r.projectId,r.itemId),rest=coverage.remaining.get(r.id)||0,shared=coverage.byItem.get(r.itemId),cancelled=projMap.get(r.projectId)?.status==='已取消';const readiness=cancelled?'案件已取消':shared?.shortfall>0?`整體備料不足（共缺 ${shared.shortfall}）`:'可備料';return [r.projectId,projMap.get(r.projectId)?.title||'',i.sku||'',i.name||'',i.unit||'',n(r.plannedQty),usedQty,rest,n(i.stock),readiness,r.note]}),
    stockMoves:allMovements.filter(m=>noFilters||(m.projectId&&selectedProjects.has(m.projectId))).map(m=>{const i=inventoryMap.get(m.itemId)||{};return [m.id,m.date,i.sku||'',i.name||'',{receive:'進貨入庫',issue:'工程領料',adjust:'盤點調整'}[m.kind]||m.kind,n(m.qty),n(m.unitCost),m.projectId?projMap.get(m.projectId)?.title||'':'',m.note]}),
-   workTemplates:(data.workTemplates||[]).map(t=>[t.id,t.parentId||'',t.kind==='package'?'包項':'工項',t.name,n(t.defaultQty),t.unit,n(t.unitPrice),t.note]),
+   workTemplates:(data.workTemplates||[]).map(t=>{
+    const mode=t.kind==='package'?'包項（子工項合計）':t.pricingMode==='components'?'材料售價＋施工勞務':'手動整體報價';
+    let materialSale='',serviceSale='',effectivePrice='';
+    if(t.kind==='task'&&t.pricingMode==='components'){
+     try{
+      const kit=typeof module==='object'&&module.exports?require('./catalog-kit'):CatalogKit;
+      const line=kit.flatten(data.workTemplates||[],t.id,data.inventoryItems||[])[0];
+      materialSale=kit.roundMoney((line.materials||[]).reduce((sum,m)=>sum+Number(m.qty)*Number(m.unitSalePrice),0));
+      serviceSale=line.serviceUnitPrice;
+      effectivePrice=line.price;
+     }catch(error){effectivePrice='材料售價未設定／配方無效'}
+    }else if(t.kind==='task'){effectivePrice=n(t.unitPrice)}
+    return [t.id,t.parentId||'',t.kind==='package'?'包項':'工項',t.name,n(t.defaultQty),t.unit,mode,materialSale,serviceSale,effectivePrice,t.note]
+   }),
    workBom:(data.workTemplates||[]).flatMap(t=>(t.materials||[]).map(m=>{const i=inventoryMap.get(m.itemId)||{};return [t.id,t.name,i.sku||'',i.name||'',n(m.qty),i.unit||'']})),
    summary:[['報表範圍_開始日',filters.from||'全部'],['報表範圍_結束日',filters.to||'全部'],['業務類別篩選',filters.type||'全部'],['工程狀態篩選',filters.status||'全部'],['有效案件數',a.totals.projects],['案件金額合計_未稅',a.totals.revenue],['已登錄成本',a.totals.cost],['估算毛利',a.totals.profit],['估算毛利率',a.totals.margin??'無法計算'],['已收款',a.totals.collected],['預估未收款',a.totals.uncollected],['統計說明','毛利分析不含已取消案件；已取消案件仍列於明細；耗材庫存清冊顯示全庫；工程需求及領料依工程篩選'],['重要提醒','案件金額可能是預估報價；成本可能尚未登齊，毛利與毛利率僅供管理估算，並非會計認列獲利']]
   };

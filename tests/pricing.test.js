@@ -114,3 +114,26 @@ test('partial v5 sidecar upgrade is rejected before creating missing pricing tab
  db.close();
  assert.throws(()=>owner.verifyEstablishedSchema({databasePath:file}),/v0.6.*不完整/);
 });
+
+test('work template Excel reports effective component sales, material resale and service prices without leaking unused manual zero',()=>{
+ const {snapshot,connection}=require('../lib/sqlite'),report=require('../reports');
+ const snap=snapshot(connection());
+ const sheet=report.sheets(snap,{},['workTemplates'])[0];
+ const auto=sheet.rows.find(x=>x[0]==='w-price-auto');
+ const legacy=sheet.rows.find(x=>x[0]==='w-price-legacy');
+ assert.ok(sheet.headers.includes('每單位有效未稅報價'));
+ assert.equal(auto[6],'材料售價＋施工勞務');
+ assert.equal(auto[7],500);
+ assert.equal(auto[8],600);
+ assert.equal(auto[9],1100,'auto-priced template must never export unrelated manual unitPrice=0');
+ assert.equal(legacy[6],'手動整體報價');
+ assert.equal(legacy[7],'');assert.equal(legacy[8],'');
+ assert.equal(legacy[9],900);
+ // A missing price must be indicated as unpriced, not silently exported as zero.
+ const bad={id:'w-unpriced-export',parentId:null,kind:'task',name:'未定價工項',unit:'式',defaultQty:1,unitPrice:0,pricingMode:'components',serviceUnitPrice:100,materials:[{itemId:'i-unpriced-export',qty:1}],note:''};
+ const artificial={...snap,inventoryItems:[...snap.inventoryItems,{id:'i-unpriced-export',unitCost:50,saleUnitPrice:null}],workTemplates:[...snap.workTemplates,bad]};
+ const invalid=report.sheets(artificial,{},['workTemplates'])[0].rows.find(x=>x[0]===bad.id);
+ assert.equal(invalid[9],'材料售價未設定／配方無效');
+ const generated=require('../xlsx-lite').buildWorkbook([sheet]);
+ assert.ok(generated.length>1000);
+});

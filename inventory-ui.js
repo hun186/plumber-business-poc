@@ -27,6 +27,7 @@ const InventoryUI=(()=>{
     '<div class="banner">用料計畫不扣庫存；實際「工程領料」才扣庫存並計入該工程材料成本。備料狀態按全部未取消案件的共用庫存需求判斷，未指定工程領料優先順序。</div><section class="panel">'+table(['工程案件','所需耗材','預計數量','已領用','待領用','庫存量','備料狀況','操作'],rows)+'</section>';
  }
  async function apply(action,p){
+  const currentModal=$('#modal-root')?.firstElementChild;
   try{
    if(state.server){
     const r=await fetch('/api/inventory',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,payload:p})});
@@ -67,15 +68,20 @@ const InventoryUI=(()=>{
     }
     saveLocal();
    }
-   closeModal();render();toast('已儲存庫存資料');
+   // A delayed save must not close the parent work editor after the child
+   // dialog was canceled, replaced, or already successfully dismissed.
+   if(!currentModal||$('#modal-root')?.firstElementChild===currentModal)closeModal();
+   render();toast('已儲存庫存資料');
   }catch(e){toast('操作失敗：'+e.message)}
  }
  function itemForm(existing){
   const p=existing||{};
+  let submitting=false;
   openModal(existing?'編輯耗材':'建立耗材','<div class="form-grid">'+field('料號','sku',p.sku||'')+field('耗材名稱','name',p.name||'')+field('單位','unit',p.unit||'個')+field('業主進貨參考成本','unitCost',p.unitCost??0,'number')+
    '<div class="field"><label>對客材料售價（每單位）</label><input name="saleUnitPrice" type="number" min="0" step="0.01" '+(existing?'':'required')+' value="'+esc(p.saleUnitPrice??'')+'"><small class="sub">舊料件可暫不設定；自動材料報價前必須填入售價。</small></div>'+
    field('低庫存警戒數量','alertQty',p.alertQty??0,'number')+note(p.note)+'</div>',
-   f=>{const v=Object.fromEntries(f.entries());apply(existing?'itemUpdate':'itemAdd',{...v,id:p.id||uid('i'),unitCost:Number(v.unitCost),saleUnitPrice:v.saleUnitPrice===''||v.saleUnitPrice==null?null:Number(v.saleUnitPrice),alertQty:Number(v.alertQty)})});
+   f=>{if(submitting)return;submitting=true;const v=Object.fromEntries(f.entries());
+    Promise.resolve(apply(existing?'itemUpdate':'itemAdd',{...v,id:p.id||uid('i'),unitCost:Number(v.unitCost),saleUnitPrice:v.saleUnitPrice===''||v.saleUnitPrice==null?null:Number(v.saleUnitPrice),alertQty:Number(v.alertQty)})).finally(()=>{submitting=false})});
  }
  function moveForm(itemId,kind='receive',projectId='',suggest=1){
   if(!list().length)return toast('請先建立耗材品項');

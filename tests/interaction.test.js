@@ -238,7 +238,7 @@ test('Escape from a stale detached preview must not intercept the quote editor',
 });
 
 test('auto-priced quote rows accept material and labor cents without HTML step mismatch',()=>{
- assert.match(appScript,/name="price" type="number" min="0" step="0\\.01"/);
+ assert.match(appScript,/name="price" type="number" min="0" step="0\.01"/);
  const kit=require('../catalog-kit');
  const line=kit.flatten([{id:'w-cent',name:'配線',kind:'task',unit:'式',defaultQty:1,pricingMode:'components',serviceUnitPrice:600,materials:[{itemId:'i-cent',qty:1}]}],
  'w-cent',[{id:'i-cent',unitCost:30.25,saleUnitPrice:45.5}])[0];

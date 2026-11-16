@@ -104,5 +104,5 @@ const InventoryUI=(()=>{
   $$('[data-manual-plan]').forEach(b=>b.onclick=()=>planForm(plans().find(p=>p.id===b.dataset.manualPlan)));
   $$('[data-issue-plan]').forEach(b=>b.onclick=()=>{const p=plans().find(r=>r.id===b.dataset.issuePlan);moveForm(p.itemId,'issue',p.projectId,Math.max(0.001,n(p.plannedQty)-issued(p.projectId,p.itemId)))});
  }
- return {renderInventory,renderRequirements,alerts,bind};
+ return {renderInventory,renderRequirements,alerts,bind,editItem:itemForm};
 })();

@@ -245,3 +245,13 @@ test('auto-priced quote rows accept material and labor cents without HTML step m
  assert.equal(line.price,645.5);
  assert.equal(line.materials[0].unitSalePrice,45.5);
 });
+
+test('customer-facing printed quotes never show the internal material margin breakdown',()=>{
+ // The management breakdown remains in the interactive preview, but must not
+ // render in the browser's print/PDF output.
+ const css=fs.readFileSync(path.join(__dirname,'../styles.css'),'utf8');
+ assert.match(appScript,/const summary=breakdown\.pricedLines\?'<div class="banner quote-internal-breakdown">/);
+ assert.match(css,/@media print\{\.quote-internal-breakdown\{display:none!important\}/);
+ const textBeforePrint=appScript.slice(appScript.indexOf('function preview('),appScript.indexOf('function detail('));
+ assert.ok(textBeforePrint.includes('${summary}${html}'),'the screen-only banner is attached to the quote preview');
+});

@@ -75,7 +75,7 @@ const InventoryUI=(()=>{
   openModal(existing?'編輯耗材':'建立耗材','<div class="form-grid">'+field('料號','sku',p.sku||'')+field('耗材名稱','name',p.name||'')+field('單位','unit',p.unit||'個')+field('業主進貨參考成本','unitCost',p.unitCost??0,'number')+
    '<div class="field"><label>對客材料售價（每單位）</label><input name="saleUnitPrice" type="number" min="0" step="0.01" '+(existing?'':'required')+' value="'+esc(p.saleUnitPrice??'')+'"><small class="sub">舊料件可暫不設定；自動材料報價前必須填入售價。</small></div>'+
    field('低庫存警戒數量','alertQty',p.alertQty??0,'number')+note(p.note)+'</div>',
-   f=>{const v=Object.fromEntries(f.entries());apply(existing?'itemUpdate':'itemAdd',{...v,id:p.id||uid('i'),unitCost:Number(v.unitCost),saleUnitPrice:v.saleUnitPrice===''?null:Number(v.saleUnitPrice),alertQty:Number(v.alertQty)})});
+   f=>{const v=Object.fromEntries(f.entries());apply(existing?'itemUpdate':'itemAdd',{...v,id:p.id||uid('i'),unitCost:Number(v.unitCost),saleUnitPrice:v.saleUnitPrice===''||v.saleUnitPrice==null?null:Number(v.saleUnitPrice),alertQty:Number(v.alertQty)})});
  }
  function moveForm(itemId,kind='receive',projectId='',suggest=1){
   if(!list().length)return toast('請先建立耗材品項');

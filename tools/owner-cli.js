@@ -183,7 +183,8 @@ function verifyEstablishedSchema(conf,allowFirstInstall=false){
   const authorized=process.env.OWNER_ALLOW_LEGACY_UPGRADE==='1';
   const inventory=['inventory_items','inventory_movements','material_requirements'];
   const catalog=['work_templates','quote_material_plans'];
-  for(const [label,group] of [['v0.3 倉儲',inventory],['v0.4 工項',catalog]]){
+  const pricing=['inventory_sale_prices','work_component_pricing'];
+  for(const [label,group] of [['v0.3 倉儲',inventory],['v0.4 工項',catalog],['v0.6 售價',pricing]]){
    const count=group.filter(name=>tables.has(name)).length;
    if(count!==0&&count!==group.length)
     fail('E_DB',label+' 的資料表不完整，拒絕建立可能覆蓋原有資料的空表');

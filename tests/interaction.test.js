@@ -390,3 +390,33 @@ test('material editor keeps its dialog open on server failure and returns on suc
  assert.equal(closed,1,'only a successful save triggers the shared modal restoration');
  assert.equal(rendered,1);
 });
+
+test('a delayed or duplicate material save must not dismiss the resumed unfinished work editor',async()=>{
+ const script=fs.readFileSync(path.join(__dirname,'../inventory-ui.js'),'utf8');
+ const parent={name:'unsaved-work',value:'still editing'};
+ const modal={name:'material-editor'};
+ const root={firstElementChild:modal};
+ const item={id:'i-slow',sku:'SL-1',name:'原料件',unit:'個',unitCost:20,saleUnitPrice:30,alertQty:0,note:''};
+ let submit,resolveFetch,networkCalls=0,closeCalls=0;
+ const response=new Promise(resolve=>{resolveFetch=resolve});
+ const sandbox={
+  state:{server:true,data:{inventoryItems:[item]}},
+  $:query=>query==='#modal-root'?root:null,
+  esc:v=>String(v??''),$$:()=>[],
+  openModal(title,html,onSubmit){submit=onSubmit},
+  closeModal(){closeCalls++;root.firstElementChild=null},
+  render(){},toast(){},
+  fetch:()=>{networkCalls++;return response}
+ };
+ const ui=vm.runInNewContext(script+'\nInventoryUI;',sandbox);
+ ui.editItem(item);
+ const fields=new Map([['sku','SL-1'],['name','新料件'],['unit','個'],['unitCost','20'],['saleUnitPrice','35'],['alertQty','0'],['note','']]);
+ submit(fields);submit(fields);
+ assert.equal(networkCalls,1,'rapid repeated saves must issue only one material write');
+ root.firstElementChild=parent; // user canceled nested material dialog while response was in flight
+ resolveFetch({ok:true,json:async()=>({data:sandbox.state.data})});
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(closeCalls,0,'late material success must never close resumed parent work editor');
+ assert.equal(root.firstElementChild,parent);
+ assert.equal(parent.value,'still editing');
+});

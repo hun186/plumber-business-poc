@@ -82,7 +82,7 @@ const CatalogUI=(()=>{
    $('.edit-recipe-material',tr).onclick=()=>{
     const id=$('[name=recipeItem]',tr).value,material=items().find(i=>i.id===id);
     if(!material)return toast('找不到選取的材料，請重新選擇');
-    try{openNestedModal(()=>InventoryUI.editItem(material),refreshMaterialChoices)}
+    try{openNestedModal(()=>{InventoryUI.editItem(material);const title=$('#modal-root .modal-header h2');if(title)title.textContent='編輯耗材（儲存／取消後返回工項）'},refreshMaterialChoices)}
     catch(error){toast('無法開啟材料編輯：'+error.message)}
    };
   }

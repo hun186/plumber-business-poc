@@ -59,8 +59,16 @@
 ## CT-005：SQLite schema
 
 - 基礎：`db/schema.sqlite.sql`；耗材：`db/inventory.sql`；包項／配方：`db/catalog.sql`；備份設定：`db/backup.sql`。
-- 版本標記 `PRAGMA user_version=5`。現有資料庫結構缺少必要欄位／約束時 fail closed；舊版升級必須先備份確認、一次性設定 `OWNER_ALLOW_LEGACY_UPGRADE=1`，不得由業主任意操作。
+- 版本標記 `PRAGMA user_version=6`。現有資料庫結構缺少必要欄位／約束時 fail closed；舊版升級必須先備份確認、一次性設定 `OWNER_ALLOW_LEGACY_UPGRADE=1`，不得由業主任意操作。
 - 使用 WAL 與外鍵；備份還原必須將舊 SQLite/WAL/SHM 整組移出，避免舊 WAL 覆蓋還原結果。
+
+### v0.6 售價／勞務增量契約（PR #10 審核中）
+
+- `inventoryItems[].unitCost` 是進貨參考成本；`inventoryItems[].saleUnitPrice` 是對客材料售價，舊資料在未設定前為 `null`，不可推定為成本價。
+- `workTemplates[].pricingMode` 為 `manual` 或 `components`；舊工項預設 manual，components 的報價取 `materials[].qty × inventoryItems[].saleUnitPrice + serviceUnitPrice`，包項只組合子工項。
+- `quotes[].items[]` 新工項可有 `pricingMode:'components'`、`serviceUnitPrice`，每筆材料另存 `unitCost`、`unitSalePrice`；建立當下即凍結，材料主檔調整不追溯修改。
+- SQLite v6 在 `db/catalog.sql` 新增 `inventory_sale_prices`、`work_component_pricing`，v5 完整庫以 sidecar tables 增量升級；v6 缺表 fail closed。
+- `BusinessReports.quoteComposition()` 以每案日期最新已接受估價單作**報價組成**，分材料銷售額、參考成本與預估差價、勞務收費、未分類舊金額、價格調整；不可稱為實際營收或勞務毛利。
 
 ## CT-006：前端快照
 
@@ -77,4 +85,4 @@
 | 舊契約 | 現行替代 | 檢查 |
 | --- | --- | --- |
 | PostgreSQL 測試方案（Issue #1） | `node:sqlite` 單機持久化 | `README.md`、`lib/sqlite.js`、PR #3 |
-| 未標記 SQLite schema | `user_version=5` 與受控舊版升級 | `tools/owner-cli.js`、`tests/owner-cli.test.js` |
+| 未標記 SQLite schema | `user_version=6` 與受控舊版升級 | `tools/owner-cli.js`、`tests/owner-cli.test.js` |

@@ -61,7 +61,7 @@
    if(!prior||String(quote.date||'').localeCompare(String(prior.date||''))>0||
       (quote.date===prior.date&&String(quote.id)>String(prior.id)))best.set(quote.projectId,quote);
   }
-  const kit=typeof module==='object'&&module.exports?require('./catalog-kit'):globalThis.CatalogKit;
+  const kit=typeof module==='object'&&module.exports?require('./catalog-kit'):CatalogKit;
   const rows=[...best.values()].map(quote=>({
    ...kit.quoteIncomeBreakdown(quote),number:quote.number,projectId:quote.projectId,
    projectTitle:sel.byId.get(quote.projectId)?.title||'',status:quote.status

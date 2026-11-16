@@ -8,7 +8,7 @@ const CatalogUI=(()=>{
   const children=new Map();for(const t of list()){const p=t.parentId||'',r=children.get(p)||[];r.push(t);children.set(p,r)}
   let rows=[],seen=new Set();
   function append(t,d){if(seen.has(t.id)||d>12)return;seen.add(t.id);const recipe=(t.materials||[]).map(m=>{const i=items().find(x=>x.id===m.itemId);return (i?.name||'已移除料件')+' × '+m.qty+' '+(i?.unit||'')}).join('、');
-   rows.push('<tr><td style="padding-left:'+(12+d*18)+'px"><b>'+(t.kind==='package'?'▣ ':'▫ ')+esc(t.name)+'</b></td><td>'+t.defaultQty+' '+esc(t.unit)+'</td><td>'+(t.kind==='package'?'子工項加總':money(t.unitPrice))+'</td><td>'+esc(recipe||'—')+'</td><td><button class="action-link" data-edit-template="'+esc(t.id)+'">編輯</button> '+(t.kind==='package'?'<button class="action-link" data-child-template="'+esc(t.id)+'">＋ 子項</button>':'')+'</td></tr>');
+   rows.push('<tr><td style="padding-left:'+(12+d*18)+'px"><b>'+(t.kind==='package'?'▣ ':'▫ ')+esc(t.name)+'</b></td><td>'+t.defaultQty+' '+esc(t.unit)+'</td><td>'+(t.kind==='package'?'子工項加總':t.pricingMode==='components'?function(){try{return money(CatalogKit.flatten(list(),t.id,items())[0].price)}catch(e){return '請設定材料售價'}}():money(t.unitPrice))+'</td><td>'+esc(recipe||'—')+'</td><td><button class="action-link" data-edit-template="'+esc(t.id)+'">編輯</button> '+(t.kind==='package'?'<button class="action-link" data-child-template="'+esc(t.id)+'">＋ 子項</button>':'')+'</td></tr>');
    for(const c of children.get(t.id)||[])append(c,d+1)
   }
   for(const t of children.get('')||[])append(t,0);for(const t of list())if(!seen.has(t.id))append(t,0);
@@ -34,6 +34,10 @@ const CatalogUI=(()=>{
     }
     CatalogKit.ensureHierarchyDepth(all,p);
     const used=new Set();for(const m of p.materials){if(!items().some(x=>x.id===m.itemId)||used.has(m.itemId)||!(m.qty>0)||!/^(?:0|[1-9]\d*)(?:\.\d{1,3})?$/.test(String(m.qty)))throw Error('材料配方重複或數量不合法');used.add(m.itemId)}
+    if(p.kind==='task'&&p.pricingMode==='components'){
+     if(!Number.isFinite(p.serviceUnitPrice)||p.serviceUnitPrice<0)throw Error('施工勞務售價不合法');
+     CatalogKit.flatten([...all.filter(x=>x.id!==p.id),p],p.id,items());
+    }
     if(action==='add')all.push(p);else Object.assign(found,p);
     saveLocal();
    }
@@ -47,13 +51,15 @@ const CatalogUI=(()=>{
   const html='<div class="form-grid">'+parents+'<div class="field"><label>類型</label><select name="kind"><option value="package" '+(t.kind==='package'?'selected':'')+'>包項（可包含子項，不直接計價）</option><option value="task" '+(t.kind!=='package'?'selected':'')+'>工項（可指定材料組合）</option></select></div>'+
    field('名稱','name',t.name||'')+field('單位','unit',t.unit||'式')+
    '<div class="field"><label>每上層預設數量</label><input name="defaultQty" type="number" min="0.001" step="0.001" required value="'+esc(t.defaultQty??1)+'"></div>'+
-   '<div class="field"><label>每單位未稅報價</label><input name="unitPrice" type="number" min="0" step="0.01" required value="'+esc(t.unitPrice??0)+'"></div>'+
+   '<div class="field full"><label>工項計價方式</label><select name="pricingMode"><option value="components" '+(!t.id||t.pricingMode==='components'?'selected':'')+'>材料對客售價合計＋施工勞務售價（新工項建議）</option><option value="manual" '+(t.id&&t.pricingMode!=='components'?'selected':'')+'>手動整體報價（舊工項沿用）</option></select></div>'+
+   '<div class="field"><label>施工勞務售價／單位（自動計價適用）</label><input name="serviceUnitPrice" type="number" min="0" step="0.01" required value="'+esc(t.serviceUnitPrice??0)+'"></div>'+
+   '<div class="field"><label>手動工項未稅總價／單位（手動計價適用）</label><input name="unitPrice" type="number" min="0" step="0.01" required value="'+esc(t.unitPrice??0)+'"></div>'+
    '<div class="field full"><label>材料配方（每單位工項耗用）</label><div class="table-scroll"><table id="recipe-table" class="item-table"><thead><tr><th>耗材</th><th>用量</th><th></th></tr></thead><tbody></tbody></table></div><button type="button" class="btn small" id="add-recipe">＋ 增加材料</button></div>'+field('備註','note',t.note||'')+'</div>';
   openModal(t.id?'編輯工項／包項':'新增工項／包項',html,f=>{
-   const v=Object.fromEntries(f.entries()),kind=v.kind;
+   const v=Object.fromEntries(f.entries()),kind=v.kind,pricingMode=kind==='package'?'manual':v.pricingMode;
    const materials=$$('#recipe-table tbody tr').map(r=>({itemId:$('[name=recipeItem]',r).value,qty:Number($('[name=recipeQty]',r).value)}));
    if(kind==='package'&&(materials.length||Number(v.unitPrice)!==0))return toast('包項不直接設定單價或材料，請改設在子工項');
-   commit(t.id?'update':'add',{id:t.id||uid('w'),parentId:v.parentId||null,kind,name:v.name.trim(),unit:v.unit.trim(),defaultQty:Number(v.defaultQty),unitPrice:Number(v.unitPrice),materials:kind==='task'?materials:[],note:v.note||''});
+   commit(t.id?'update':'add',{id:t.id||uid('w'),parentId:v.parentId||null,kind,name:v.name.trim(),unit:v.unit.trim(),defaultQty:Number(v.defaultQty),unitPrice:Number(v.unitPrice),pricingMode,serviceUnitPrice:kind==='package'?0:Number(v.serviceUnitPrice),materials:kind==='task'?materials:[],note:v.note||''});
   },true);
   function recipeRow(m={}){
    if(!items().length)return toast('請先到耗材倉儲建立料件');
@@ -69,7 +75,7 @@ const CatalogUI=(()=>{
   if(!t)return '<p class="sub">先選擇一個套裝包項或工項，即可查看內容。</p>';
   let html='<div class="quote-preview-header"><b>'+esc(t.name)+'</b><span>'+(t.kind==='package'?'套裝包項':'單一工項')+'</span></div>';
   try{
-   const lines=CatalogKit.flatten(list(),templateId);
+   const lines=CatalogKit.flatten(list(),templateId,items());
    const total=lines.reduce((sum,line)=>sum+Number(line.qty)*Number(line.price),0);
    html+='<div class="quote-preview-meta">包含 '+lines.length+' 個計價工項 · 參考未稅金額 '+money(total)+'</div>';
    html+='<div class="quote-preview-lines">';
@@ -80,6 +86,7 @@ const CatalogUI=(()=>{
     });
     html+='<div class="quote-preview-line"><div class="quote-preview-line-title"><strong>'+esc(line.name)+'</strong><button type="button" class="action-link" data-preview-edit-template="'+esc(line.catalogId)+'" aria-label="編輯 '+esc(line.name)+' 工項範本">編輯</button></div>'+
      '<div class="quote-preview-meta">'+esc(line.qty)+' '+esc(line.unit)+' × '+money(line.price)+' = '+money(Number(line.qty)*Number(line.price))+'</div>'+
+     (line.pricingMode==='components'?'<div class="quote-preview-meta">其中材料對客售價 '+money((line.materials||[]).reduce((n,m)=>n+m.qty*m.unitSalePrice,0))+'，施工勞務 '+money(line.serviceUnitPrice)+'／單位</div>':'')+
      '<div class="quote-preview-material">'+(recipe.length?recipe.join('、'):'尚未設定材料組合')+'</div></div>';
    }
    html+='</div>';
@@ -189,7 +196,7 @@ const CatalogUI=(()=>{
   button.onclick=()=>{
    if(!selector.value)return notify('請先選擇包項或工項',true);
    try{
-    const lines=CatalogKit.flatten(list(),selector.value);
+    const lines=CatalogKit.flatten(list(),selector.value,items());
     if(!lines.length)throw new Error('這個包項沒有可加入的計價工項');
     const old=$$('#items-table tbody tr');
     const blank=old.length===1&&!$('[name=itemName]',old[0]).value.trim();

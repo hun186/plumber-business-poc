@@ -67,7 +67,7 @@ const CatalogUI=(()=>{
   function refreshMaterialChoices(){
    // Rebuild only the material options, not the parent form or recipe rows:
    // partially typed values and selected material IDs remain unchanged.
-   for(const row of $('#recipe-table tbody tr')){
+   for(const row of $$('#recipe-table tbody tr')){
     const select=$('[name=recipeItem]',row),selected=select.value;
     select.innerHTML=materialOptions(selected);
     select.value=selected;

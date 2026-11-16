@@ -78,5 +78,9 @@
   }
   return true;
  }
- return {flatten,quoteMaterials,clearQuotePlans,ensureHierarchyDepth,round3};
+ // FormData includes every quote line input, but /api/data only accepts quote-level keys.
+ function quoteHeaderFields(formData){
+  return Object.fromEntries(['number','date','projectId','status','taxRate','note'].map(name=>[name,formData.get(name)]));
+ }
+ return {flatten,quoteMaterials,clearQuotePlans,ensureHierarchyDepth,round3,quoteHeaderFields};
 });

@@ -157,3 +157,28 @@ test('SQLite rejects relocating a populated subtree past the level limit without
  assert.throws(()=>upsertCatalog('update',pkg('w-rehome','新包項','w-depth-10'),db),/12 層/);
  assert.equal(snapshot(db).workTemplates.find(t=>t.id==='w-rehome').parentId,null);
 });
+
+test('quote form submits header fields and nested line items without leaking itemName to SQLite API',()=>{
+ const form=new FormData();
+ for(const [name,value] of Object.entries({number:'QT-FORM-001',date:'2026-11-17',projectId:'p-cat',status:'草稿',taxRate:'5',note:'初稿'}))form.set(name,value);
+ // The same FormData contains all repeated line controls from the browser table.
+ form.append('itemName','手動配線');form.append('qty','2');form.append('unit','式');form.append('price','300');
+ form.append('itemName','插座安裝');form.append('qty','3');form.append('unit','個');form.append('price','250');
+ const head=kit.quoteHeaderFields(form);
+ assert.deepEqual(Object.keys(head),['number','date','projectId','status','taxRate','note']);
+ assert.equal(head.number,'QT-FORM-001');
+ for(const key of ['itemName','qty','unit','price'])assert.equal(Object.hasOwn(head,key),false,key+' must not be a quote column');
+ const items=[{name:'手動配線',qty:2,unit:'式',price:300},{name:'插座安裝',qty:3,unit:'個',price:250}];
+ const payload={...head,customerId:'c-cat',taxRate:Number(head.taxRate),items,id:'q-form'};
+ assert.doesNotThrow(()=>mutate('add',payload));
+ let saved=snapshot(db).quotes.find(q=>q.id==='q-form');
+ assert.equal(saved.items.length,2);assert.equal(saved.items[1].name,'插座安裝');
+ // Edits must follow the same allowlist, preserving items as JSON and not extra table columns.
+ form.set('note','第二版');
+ const next={...kit.quoteHeaderFields(form),customerId:'c-cat',taxRate:5,items:[...items,{name:'追加工項',qty:1,unit:'式',price:90}],id:'q-form'};
+ assert.doesNotThrow(()=>mutate('update',next));
+ saved=snapshot(db).quotes.find(q=>q.id==='q-form');
+ assert.equal(saved.items.length,3);assert.equal(saved.note,'第二版');
+ const app=fs.readFileSync(path.join(__dirname,'../app.js'),'utf8');
+ assert.match(app,/const x=CatalogKit\.quoteHeaderFields\(f\);const p=project\(x\.projectId\)/);
+});

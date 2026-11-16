@@ -54,18 +54,37 @@ const CatalogUI=(()=>{
    '<div class="field full"><label>工項計價方式</label><select name="pricingMode"><option value="components" '+(!t.id||t.pricingMode==='components'?'selected':'')+'>材料對客售價合計＋施工勞務售價（新工項建議）</option><option value="manual" '+(t.id&&t.pricingMode!=='components'?'selected':'')+'>手動整體報價（舊工項沿用）</option></select></div>'+
    '<div class="field"><label>施工勞務售價／單位（自動計價適用）</label><input name="serviceUnitPrice" type="number" min="0" step="0.01" required value="'+esc(t.serviceUnitPrice??0)+'"></div>'+
    '<div class="field"><label>手動工項未稅總價／單位（手動計價適用）</label><input name="unitPrice" type="number" min="0" step="0.01" required value="'+esc(t.unitPrice??0)+'"></div>'+
-   '<div class="field full"><label>材料配方（每單位工項耗用）</label><div class="table-scroll"><table id="recipe-table" class="item-table"><thead><tr><th>耗材</th><th>用量</th><th></th></tr></thead><tbody></tbody></table></div><button type="button" class="btn small" id="add-recipe">＋ 增加材料</button></div>'+field('備註','note',t.note||'')+'</div>';
+   '<div class="field full"><label>材料配方（每單位工項耗用）</label><div class="table-scroll"><table id="recipe-table" class="item-table"><thead><tr><th>耗材</th><th>用量</th><th>快速操作</th></tr></thead><tbody></tbody></table></div><button type="button" class="btn small" id="add-recipe">＋ 增加材料</button></div>'+field('備註','note',t.note||'')+'</div>';
   openModal(t.id?'編輯工項／包項':'新增工項／包項',html,f=>{
    const v=Object.fromEntries(f.entries()),kind=v.kind,pricingMode=kind==='package'?'manual':v.pricingMode;
    const materials=$$('#recipe-table tbody tr').map(r=>({itemId:$('[name=recipeItem]',r).value,qty:Number($('[name=recipeQty]',r).value)}));
    if(kind==='package'&&(materials.length||Number(v.unitPrice)!==0))return toast('包項不直接設定單價或材料，請改設在子工項');
    commit(t.id?'update':'add',{id:t.id||uid('w'),parentId:v.parentId||null,kind,name:v.name.trim(),unit:v.unit.trim(),defaultQty:Number(v.defaultQty),unitPrice:Number(v.unitPrice),pricingMode,serviceUnitPrice:kind==='package'?0:Number(v.serviceUnitPrice),materials:kind==='task'?materials:[],note:v.note||''});
   },true);
+  function materialOptions(selected=''){
+   return items().map(i=>'<option value="'+esc(i.id)+'" '+(i.id===selected?'selected':'')+'>'+esc(i.sku+' · '+i.name+'（'+i.unit+'）')+'</option>').join('');
+  }
+  function refreshMaterialChoices(){
+   // Rebuild only the material options, not the parent form or recipe rows:
+   // partially typed values and selected material IDs remain unchanged.
+   for(const row of $$('#recipe-table tbody tr')){
+    const select=$('[name=recipeItem]',row),selected=select.value;
+    select.innerHTML=materialOptions(selected);
+    select.value=selected;
+   }
+  }
   function recipeRow(m={}){
    if(!items().length)return toast('請先到耗材倉儲建立料件');
    const tr=document.createElement('tr');
-   tr.innerHTML='<td><select name="recipeItem">'+items().map(i=>'<option value="'+esc(i.id)+'" '+(i.id===m.itemId?'selected':'')+'>'+esc(i.sku+' · '+i.name+'（'+i.unit+'）')+'</option>').join('')+'</select></td><td><input name="recipeQty" type="number" min="0.001" step="0.001" value="'+esc(m.qty??1)+'" required></td><td><button type="button" class="x">×</button></td>';
-   $('#recipe-table tbody').append(tr);$('button',tr).onclick=()=>tr.remove();
+   tr.innerHTML='<td><select name="recipeItem">'+materialOptions(m.itemId)+'</select></td><td><input name="recipeQty" type="number" min="0.001" step="0.001" value="'+esc(m.qty??1)+'" required></td><td><button type="button" class="action-link edit-recipe-material" aria-label="編輯所選耗材">編輯材料</button> <button type="button" class="x remove-recipe-material" aria-label="移除材料">×</button></td>';
+   $('#recipe-table tbody').append(tr);
+   $('.remove-recipe-material',tr).onclick=()=>tr.remove();
+   $('.edit-recipe-material',tr).onclick=()=>{
+    const id=$('[name=recipeItem]',tr).value,material=items().find(i=>i.id===id);
+    if(!material)return toast('找不到選取的材料，請重新選擇');
+    try{openNestedModal(()=>{InventoryUI.editItem(material);const title=$('#modal-root .modal-header h2');if(title)title.textContent='編輯耗材（儲存／取消後返回工項）'},refreshMaterialChoices)}
+    catch(error){toast('無法開啟材料編輯：'+error.message)}
+   };
   }
   $('#add-recipe').onclick=()=>recipeRow();
   for(const m of t.materials||[])recipeRow(m);

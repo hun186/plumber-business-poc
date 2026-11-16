@@ -49,7 +49,29 @@ function status(v){return `<span class="status ${esc(v)}">${esc(v)}</span>`}
 function table(headers,rows){return `<div class="table-scroll"><table><thead><tr>${headers.map(t=>`<th>${t}</th>`).join('')}</tr></thead><tbody>${rows||`<tr><td colspan="${headers.length}" class="empty">目前沒有符合條件的資料</td></tr>`}</tbody></table></div>`}
 function searchBox(hint='搜尋名稱或關鍵字'){return `<input id="table-search" class="search" placeholder="⌕  ${hint}" value="${esc(state.search)}">`}
 function openModal(title,content,onSubmit,wide=false){const root=$('#modal-root');root.innerHTML=`<div class="modal ${wide?'wide':''}"><div class="modal-header"><h2>${esc(title)}</h2><button type="button" class="x" id="close-modal">×</button></div><form id="active-form">${content}<div class="modal-actions"><button type="button" class="btn" id="cancel-modal">取消</button><button type="submit" class="btn primary">儲存資料</button></div></form></div>`;$('#close-modal').onclick=closeModal;$('#cancel-modal').onclick=closeModal;$('#active-form').onsubmit=e=>{e.preventDefault();onSubmit(new FormData(e.target))}}
-function closeModal(){$('#modal-root').innerHTML=''}
+// Suspend a form in the DOM while editing a related record, without serializing its
+// unsaved inputs. Restoring the original node preserves row order, typed values,
+// native validation state, event handlers, cursor and scroll position.
+const modalHistory=[];
+function openNestedModal(openChild,onRestore){
+ const root=$('#modal-root'),previous=root.firstElementChild;
+ if(!previous)throw Error('找不到要返回的工項編輯畫面');
+ const scrollTop=previous.scrollTop,focus=document.activeElement;
+ previous.remove();
+ modalHistory.push({previous,scrollTop,focus,onRestore});
+ try{openChild()}catch(error){closeModal();throw error}
+}
+function closeModal(){
+ const root=$('#modal-root');
+ root.innerHTML='';
+ const parent=modalHistory.pop();
+ if(!parent)return;
+ root.appendChild(parent.previous);
+ parent.previous.scrollTop=parent.scrollTop;
+ if(parent.onRestore)parent.onRestore();
+ if(parent.focus&&parent.previous.contains(parent.focus)&&typeof parent.focus.focus==='function')
+  parent.focus.focus({preventScroll:true});
+}
 function field(label,name,value='',type='text',opts){if(type==='select')return `<div class="field"><label>${label}</label><select name="${name}" required>${opts.map(x=>`<option value="${esc(x)}" ${x===value?'selected':''}>${esc(x)}</option>`).join('')}</select></div>`;return `<div class="field ${name==='note'?'full':''}"><label>${label}</label>${name==='note'?`<textarea rows="2" name="${name}">${esc(value)}</textarea>`:`<input type="${type}" name="${name}" value="${esc(value)}" ${['name','title','amount'].includes(name)?'required':''} ${type==='number'?'min="0"':''}>`}</div>`}
 async function api(action,payload){const res=await fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,payload}),credentials:'same-origin'});const val=await res.json();if(!res.ok)throw new Error(val.error||'操作失敗');return val}
 async function commit(entity,action,payload){try{if(state.server){const out=await api(action,payload);state.data=out.data}else{if(action==='add'){state.data[entity].push(payload)}else if(action==='update'){

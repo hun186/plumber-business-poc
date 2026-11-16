@@ -255,3 +255,168 @@ test('customer-facing printed quotes never show the internal material margin bre
  const textBeforePrint=appScript.slice(appScript.indexOf('function preview('),appScript.indexOf('function detail('));
  assert.ok(textBeforePrint.includes('${summary}${html}'),'the screen-only banner is attached to the quote preview');
 });
+
+test('nested material editor restores the original unsaved work dialog DOM and scroll position on save or cancel',()=>{
+ const nodes=new Map();
+ const node=key=>{
+  if(!nodes.has(key))nodes.set(key,{textContent:'',innerHTML:'',style:{},classList:{add(){},remove(){},toggle(){}},closest(){return null},addEventListener(){}});
+  return nodes.get(key);
+ };
+ const root={
+  child:null,
+  get firstElementChild(){return this.child},
+  set innerHTML(v){if(v==='')this.child=null},
+  appendChild(child){this.child=child}
+ };
+ nodes.set('#modal-root',root);
+ const originalInputs={name:'尚未儲存的插座配線',qty:'2.375',unitPrice:'845.50'};
+ const editorTrigger={focused:0,focus(opts){this.focused++;assert.equal(opts.preventScroll,true)}};
+ const original={
+  scrollTop:176,
+  remove(){root.child=null},
+  contains(el){return el===editorTrigger},
+  originalInputs,
+  rows:[{itemId:'i-wire',qty:'3.125'},{itemId:'i-outlet',qty:'2'}]
+ };
+ root.child=original;
+ const sandbox={
+  document:{querySelector:node,querySelectorAll:()=>[],addEventListener(){},activeElement:editorTrigger},
+  location:{hash:''},localStorage:{getItem(){return null},setItem(){},removeItem(){}},
+  fetch:()=>new Promise(()=>{}),
+  CatalogUI:{renderCatalog:()=>'',bind(){}},
+  InventoryUI:{renderInventory:()=>'',renderRequirements:()=>'',alerts:()=>[],bind(){}},
+  BackupUI:{render:()=>'',bind(){}},BusinessReports:{}
+ };
+ const handlers=vm.runInNewContext(appScript+'\n({openNestedModal,closeModal})',sandbox,{filename:'app.js'});
+ let returns=0;
+ handlers.openNestedModal(()=>{root.child={type:'material-editor',name:'電線'}},()=>returns++);
+ assert.equal(root.child.type,'material-editor');
+ original.originalInputs.name='邊編工項時輸入，尚未儲存';
+ // A failed server save stays in the material editor; the parent is untouched.
+ assert.equal(returns,0);
+ assert.equal(root.child.type,'material-editor');
+ handlers.closeModal(); // successful save or Cancel both restore the parent.
+ assert.equal(root.child,original,'must be the same DOM object, not a form reconstructed from persisted values');
+ assert.equal(root.child.scrollTop,176);
+ assert.equal(root.child.originalInputs.name,'邊編工項時輸入，尚未儲存');
+ assert.equal(root.child.originalInputs.qty,'2.375');
+ assert.equal(root.child.rows[0].qty,'3.125');
+ assert.equal(returns,1);
+ assert.equal(editorTrigger.focused,1);
+ handlers.closeModal(); // eventual close of returned parent is normal
+ assert.equal(root.firstElementChild,null);
+ assert.equal(returns,1);
+ // Errors while launching the nested editor also restore the work form.
+ root.child=original;
+ assert.throws(()=>handlers.openNestedModal(()=>{throw new Error('material form unavailable')}),/material form unavailable/);
+ assert.equal(root.child,original);
+});
+
+test('work-template recipe editor opens the exact selected material and refreshes option labels without losing unfinished input',()=>{
+ const first={id:'i-wire',sku:'W-01',name:'舊電線',unit:'米',unitCost:10,saleUnitPrice:20};
+ const second={id:'i-outlet',sku:'S-01',name:'插座',unit:'個',unitCost:40,saleUnitPrice:80};
+ let savedModalHTML='',saveWork,editedMaterial,returnToWork,focused=0;
+ const recipeRows=[],addButton={},tbody={append(tr){recipeRows.push(tr)}};
+ const form={fields:{name:'尚未儲存的配線',defaultQty:'1.875',serviceUnitPrice:'375.50',note:'現場備註'}};
+ const $=(q,parent)=>{
+  if(parent)return ({'[name=recipeItem]':parent.selected,'[name=recipeQty]':parent.qty,
+   '.edit-recipe-material':parent.editButton,'.remove-recipe-material':parent.removeButton})[q];
+  return ({'#recipe-table tbody':tbody,'#add-recipe':addButton})[q];
+ };
+ const sandbox={
+  state:{data:{workTemplates:[],inventoryItems:[first,second]}},CatalogKit:kit,
+  $,$$:q=>q==='#recipe-table tbody tr'?recipeRows:[],
+  esc:x=>String(x??''),field:(name,key,v)=>'<input name="'+key+'" value="'+String(v)+'">',
+  document:{createElement(tag){
+   assert.equal(tag,'tr');
+   return {selected:{value:'i-wire',innerHTML:''},qty:{value:'5.125'},
+    editButton:{focus(){focused++}},removeButton:{},remove(){const i=recipeRows.indexOf(this);if(i>=0)recipeRows.splice(i,1)}};
+  }},
+  toast(){},uid:()=> 'w-unsaved',
+  openModal(title,html,onSubmit){savedModalHTML=html;saveWork=onSubmit},
+  openNestedModal(open,onReturn){returnToWork=onReturn;open()},
+  InventoryUI:{editItem(item){editedMaterial=item}}
+ };
+ const catalog=vm.runInNewContext(pickerScript+'\nCatalogUI;',sandbox,{filename:'catalog-ui.js'});
+ catalog.edit(null);
+ assert.match(savedModalHTML,/編輯材料|增加材料/);
+ addButton.onclick();
+ assert.equal(recipeRows.length,1);
+ const row=recipeRows[0];
+ assert.match(row.innerHTML,/class="action-link edit-recipe-material"/);
+ assert.match(row.innerHTML,/type="button"/);
+ row.selected.value='i-outlet';
+ row.editButton.onclick();
+ assert.equal(editedMaterial,second,'should open the currently selected material, not the first option');
+ assert.equal(typeof returnToWork,'function');
+ // Material save updates the record; restoring refreshes dropdown labels only.
+ second.name='新款插座';second.saleUnitPrice=100;
+ const initialQty=row.qty.value,formState={...form.fields};
+ returnToWork();
+ assert.equal(row.selected.value,'i-outlet');
+ assert.match(row.selected.innerHTML,/新款插座/);
+ assert.equal(row.qty.value,initialQty);
+ assert.deepEqual(form.fields,formState,'the unsaved parent form must not be submitted or regenerated');
+ assert.equal(recipeRows.length,1);
+ assert.equal(typeof saveWork,'function');
+ row.removeButton.onclick();
+ assert.equal(recipeRows.length,0,'remove action must still work after adding the edit button');
+});
+
+test('material editor keeps its dialog open on server failure and returns on successful save',async()=>{
+ const script=fs.readFileSync(path.join(__dirname,'../inventory-ui.js'),'utf8');
+ const entry={id:'i-inline',sku:'MAT-01',name:'電線',unit:'米',unitCost:30,saleUnitPrice:45,alertQty:0,note:''};
+ let submit=null,closed=0,rendered=0,shouldFail=true,updates=0;
+ const messages=[];
+ const sandbox={
+  state:{server:true,data:{inventoryItems:[entry],inventoryMovements:[],materialRequirements:[],projects:[]}},
+  $:()=>null,$$:()=>[],
+  esc:x=>String(x??''),openModal(title,html,onSubmit){assert.match(title,/編輯耗材/);submit=onSubmit},
+  closeModal(){closed++},render(){rendered++},toast:message=>messages.push(message),
+  fetch:async()=>shouldFail?{ok:false,json:async()=>({error:'儲存受阻'})}:{
+   ok:true,json:async()=>{updates++;return {data:sandbox.state.data}}
+  }
+ };
+ const ui=vm.runInNewContext(script+'\nInventoryUI;',sandbox,{filename:'inventory-ui.js'});
+ ui.editItem(entry);
+ const form=new Map([['sku','MAT-01'],['name','更新電線'],['unit','米'],['unitCost','35'],['saleUnitPrice','60'],['alertQty','0'],['note','']]);
+ submit(form);
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(closed,0,'server failure must keep the material editor open');
+ assert.ok(messages.some(x=>x.includes('儲存受阻')));
+ shouldFail=false;submit(form);
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(updates,1);
+ assert.equal(closed,1,'only a successful save triggers the shared modal restoration');
+ assert.equal(rendered,1);
+});
+
+test('a delayed or duplicate material save must not dismiss the resumed unfinished work editor',async()=>{
+ const script=fs.readFileSync(path.join(__dirname,'../inventory-ui.js'),'utf8');
+ const parent={name:'unsaved-work',value:'still editing'};
+ const modal={name:'material-editor'};
+ const root={firstElementChild:modal};
+ const item={id:'i-slow',sku:'SL-1',name:'原料件',unit:'個',unitCost:20,saleUnitPrice:30,alertQty:0,note:''};
+ let submit,resolveFetch,networkCalls=0,closeCalls=0;
+ const response=new Promise(resolve=>{resolveFetch=resolve});
+ const sandbox={
+  state:{server:true,data:{inventoryItems:[item]}},
+  $:query=>query==='#modal-root'?root:null,
+  esc:v=>String(v??''),$$:()=>[],
+  openModal(title,html,onSubmit){submit=onSubmit},
+  closeModal(){closeCalls++;root.firstElementChild=null},
+  render(){},toast(){},
+  fetch:()=>{networkCalls++;return response}
+ };
+ const ui=vm.runInNewContext(script+'\nInventoryUI;',sandbox);
+ ui.editItem(item);
+ const fields=new Map([['sku','SL-1'],['name','新料件'],['unit','個'],['unitCost','20'],['saleUnitPrice','35'],['alertQty','0'],['note','']]);
+ submit(fields);submit(fields);
+ assert.equal(networkCalls,1,'rapid repeated saves must issue only one material write');
+ root.firstElementChild=parent; // user canceled nested material dialog while response was in flight
+ resolveFetch({ok:true,json:async()=>({data:sandbox.state.data})});
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(closeCalls,0,'late material success must never close resumed parent work editor');
+ assert.equal(root.firstElementChild,parent);
+ assert.equal(parent.value,'still editing');
+});

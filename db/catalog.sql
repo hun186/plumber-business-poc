@@ -21,3 +21,15 @@ CREATE TABLE IF NOT EXISTS quote_material_plans (
  PRIMARY KEY(project_id,item_id)
 );
 CREATE INDEX IF NOT EXISTS quote_material_plans_quote_idx ON quote_material_plans(quote_id);
+
+-- v0.6 additive price lists. Missing legacy sale prices stay NULL (never infer profit).
+-- One pricing row per material; prices are distinct from inventory purchase costs.
+CREATE TABLE IF NOT EXISTS inventory_sale_prices (
+ item_id TEXT PRIMARY KEY REFERENCES inventory_items(id),
+ unit_sale_price REAL NOT NULL CHECK(unit_sale_price>=0)
+);
+-- Absence means a legacy manually-priced work template; do not reprice it.
+CREATE TABLE IF NOT EXISTS work_component_pricing (
+ template_id TEXT PRIMARY KEY REFERENCES work_templates(id),
+ service_unit_price REAL NOT NULL DEFAULT 0 CHECK(service_unit_price>=0)
+);
